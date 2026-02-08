@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 const clients = new Map();
 
 function broadcast(ws, type, payload) {
-  if (ws.readyState === ws.OPEN) {
+  if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type, ...payload }));
   }
 }

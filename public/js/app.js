@@ -184,12 +184,12 @@
 
   function enqueueTTS(user, text, eventType) {
     /* deduplicate by content hash */
-    const id = `${user}:${text}:${Date.now()}`;
+    const id = `${user}:${text}`;
     if (seenIds.has(id)) return;
     seenIds.add(id);
+    /* After a while, reset to prevent unbounded growth */
     if (seenIds.size > 2000) {
-      const iter = seenIds.values();
-      for (let i = 0; i < 500; i++) seenIds.delete(iter.next().value);
+      seenIds.clear();
     }
 
     /* keyword filter */
@@ -253,7 +253,7 @@
   ttsStopBtn.addEventListener('click', () => {
     isPaused = false;
     isSpeaking = false;
-    ttsQueue = [];
+    ttsQueue.length = 0;
     speechSynthesis.cancel();
     renderQueue();
   });
