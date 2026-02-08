@@ -28,6 +28,8 @@
   const browserVoiceGroup = $('#browserVoiceGroup');
   const seVoiceGroup    = $('#seVoiceGroup');
   const seVoiceSelect   = $('#seVoiceSelect');
+  const gttsLangGroup   = $('#gttsLangGroup');
+  const gttsLangSelect  = $('#gttsLangSelect');
   const testTtsBtn      = $('#testTtsBtn');
 
   const filterEnabled   = $('#filterEnabled');
@@ -39,13 +41,17 @@
   const giftGalleryGrid = $('#giftGalleryGrid');
   const soundLibrary    = $('#soundLibrary');
 
+  const connectionOverlay = $('#connectionOverlay');
+  const connectionSteps   = $('#connectionSteps');
+
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
   let isSpeaking = false;
   let ttsEnabled = false;
-  let userDisconnected = false;     // true only when user clicks Disconnect
+  let userDisconnected = false;
   let currentUsername = '';
+  let currentAudio = null;            // track current Audio element for background playback
   const MAX_CHAT_ITEMS = 300;
   const seenIds = new Set();
   const RECONNECT_DELAY = 3000;
@@ -121,9 +127,10 @@
 
   /* ---------- TTS Provider switching ---------- */
   ttsProvider.addEventListener('change', () => {
-    const isSE = ttsProvider.value === 'streamelements';
-    browserVoiceGroup.classList.toggle('hidden', isSE);
-    seVoiceGroup.classList.toggle('hidden', !isSE);
+    const val = ttsProvider.value;
+    browserVoiceGroup.classList.toggle('hidden', val !== 'browser');
+    seVoiceGroup.classList.toggle('hidden', val !== 'streamelements');
+    gttsLangGroup.classList.toggle('hidden', val !== 'googletranslate');
   });
 
   /* ---------- TTS Toggle ---------- */
@@ -132,23 +139,56 @@
     ttsToggleBtn.classList.toggle('active', ttsEnabled);
     ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
     if (!ttsEnabled) {
-      /* Stop everything when disabled */
       speechSynthesis.cancel();
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
       isSpeaking = false;
       renderQueue();
     }
   });
 
+  /* ---------- Connection Status Overlay ---------- */
+  function showConnectionOverlay() {
+    connectionSteps.innerHTML = '';
+    connectionOverlay.classList.remove('hidden');
+  }
+
+  function hideConnectionOverlay() {
+    connectionOverlay.classList.add('hidden');
+  }
+
+  function addConnectionStep(message, state) {
+    /* state: 'active', 'done', 'error' */
+    /* Mark previous active steps as done */
+    connectionSteps.querySelectorAll('.connection-step.active').forEach(el => {
+      el.classList.remove('active');
+      el.classList.add('done');
+    });
+
+    const step = document.createElement('div');
+    step.className = `connection-step ${state}`;
+    step.innerHTML = `<div class="connection-step-dot"></div><span>${message}</span>`;
+    connectionSteps.appendChild(step);
+
+    /* Auto-hide on success or error after a delay */
+    if (state === 'done' || state === 'error') {
+      setTimeout(hideConnectionOverlay, state === 'done' ? 1500 : 3000);
+    }
+  }
+
   /* ---------- WebSocket with auto-reconnect ---------- */
   function connectWs(username) {
     currentUsername = username;
     userDisconnected = false;
 
+    showConnectionOverlay();
+    addConnectionStep('🌐 Connecting to server…', 'active');
+
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}`);
 
     ws.addEventListener('open', () => {
+      addConnectionStep('✅ Server connected!', 'done');
       ws.send(JSON.stringify({ type: 'connect', username }));
       setStatus('connecting');
     });
@@ -180,6 +220,7 @@
   function disconnectWs() {
     userDisconnected = true;
     currentUsername = '';
+    hideConnectionOverlay();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -194,10 +235,10 @@
       statusBadge.className = 'badge badge-on';
     } else if (s === 'connecting') {
       statusBadge.textContent = 'Connecting…';
-      statusBadge.className = 'badge badge-off';
+      statusBadge.className = 'badge badge-connecting';
     } else if (s === 'reconnecting') {
       statusBadge.textContent = 'Reconnecting…';
-      statusBadge.className = 'badge badge-off';
+      statusBadge.className = 'badge badge-connecting';
     } else {
       statusBadge.textContent = 'Offline';
       statusBadge.className = 'badge badge-off';
@@ -209,18 +250,26 @@
   /* ---------- Event handler ---------- */
   function handleEvent(msg) {
     switch (msg.type) {
+      case 'status':
+        /* Animated connection steps from server */
+        if (msg.step === 'success') {
+          addConnectionStep(msg.message, 'done');
+        } else if (msg.step === 'error') {
+          addConnectionStep(msg.message, 'error');
+        } else {
+          addConnectionStep(msg.message, 'active');
+        }
+        break;
       case 'connected':
         setStatus('online');
         break;
       case 'disconnected':
-        /* Close the WS so the close handler triggers auto-reconnect */
         if (!userDisconnected && currentUsername) {
           appendSystem('Stream disconnected. Reconnecting…');
           if (ws) { ws.close(); ws = null; }
         }
         break;
       case 'error':
-        /* Only show errors when not auto-reconnecting to avoid spam */
         if (userDisconnected || !currentUsername) {
           appendSystem(`Error: ${msg.message}`);
         }
@@ -357,7 +406,6 @@
       giftRegistry[giftId] = { name, imageUrl, diamonds, count: count || 1 };
     }
 
-    /* Play assigned sound if any */
     const assignedSound = giftSounds[giftId];
     if (assignedSound) {
       playAlertSound(assignedSound);
@@ -379,7 +427,6 @@
       const card = document.createElement('div');
       card.className = 'gift-card';
 
-      /* Gift image from TikTok */
       if (g.imageUrl) {
         const gImg = document.createElement('img');
         gImg.src = g.imageUrl;
@@ -430,7 +477,6 @@
       testBtn.textContent = '▶ Test';
       card.appendChild(testBtn);
 
-      /* Sound assignment change */
       sel.addEventListener('change', () => {
         if (sel.value) {
           giftSounds[gid] = sel.value;
@@ -439,7 +485,6 @@
         }
       });
 
-      /* Test sound button */
       testBtn.addEventListener('click', () => {
         const sid = giftSounds[gid] || sel.value;
         if (sid) playAlertSound(sid);
@@ -464,16 +509,27 @@
   speechSynthesis.addEventListener('voiceschanged', populateVoices);
   populateVoices();
 
-  /* --- StreamElements TTS via server proxy --- */
+  /* --- Audio-based TTS (works in background on Android) --- */
+  function speakViaAudio(url) {
+    const audio = new Audio(url);
+    currentAudio = audio;
+    audio.volume = parseFloat(volumeSlider.value);
+    audio.playbackRate = parseFloat(speedSlider.value);
+    audio.onended = () => { currentAudio = null; isSpeaking = false; processQueue(); };
+    audio.onerror = () => { currentAudio = null; isSpeaking = false; processQueue(); };
+    audio.play().catch(() => { currentAudio = null; isSpeaking = false; processQueue(); });
+  }
+
   function speakStreamElements(text) {
     const voice = seVoiceSelect.value;
     const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(text)}`;
-    const audio = new Audio(url);
-    audio.volume = parseFloat(volumeSlider.value);
-    audio.playbackRate = parseFloat(speedSlider.value);
-    audio.onended = () => { isSpeaking = false; processQueue(); };
-    audio.onerror = () => { isSpeaking = false; processQueue(); };
-    audio.play().catch(() => { isSpeaking = false; processQueue(); });
+    speakViaAudio(url);
+  }
+
+  function speakGoogleTranslate(text) {
+    const lang = gttsLangSelect.value;
+    const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(text)}`;
+    speakViaAudio(url);
   }
 
   function enqueueTTS(user, text, eventType) {
@@ -504,12 +560,17 @@
     const next = ttsQueue.shift();
     renderQueue();
 
-    if (ttsProvider.value === 'streamelements') {
+    const provider = ttsProvider.value;
+    if (provider === 'streamelements') {
       speakStreamElements(next);
       return;
     }
+    if (provider === 'googletranslate') {
+      speakGoogleTranslate(next);
+      return;
+    }
 
-    /* Browser TTS */
+    /* Browser TTS (may not work in background on Android) */
     const utter = new SpeechSynthesisUtterance(next);
     utter.volume = parseFloat(volumeSlider.value);
     utter.rate   = parseFloat(speedSlider.value);
@@ -537,9 +598,17 @@
   /* ---------- Test TTS ---------- */
   testTtsBtn.addEventListener('click', () => {
     const testText = 'Hello! This is a TTS test. Hola, esta es una prueba de voz.';
-    if (ttsProvider.value === 'streamelements') {
+    const provider = ttsProvider.value;
+    if (provider === 'streamelements') {
       const voice = seVoiceSelect.value;
       const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
+      const audio = new Audio(url);
+      audio.volume = parseFloat(volumeSlider.value);
+      audio.playbackRate = parseFloat(speedSlider.value);
+      audio.play().catch(() => {});
+    } else if (provider === 'googletranslate') {
+      const lang = gttsLangSelect.value;
+      const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(testText)}`;
       const audio = new Audio(url);
       audio.volume = parseFloat(volumeSlider.value);
       audio.playbackRate = parseFloat(speedSlider.value);
@@ -577,10 +646,18 @@
   disconnectBtn.addEventListener('click', disconnectWs);
 
   /* ---------- Keep TTS alive when tab hidden ---------- */
+  /* For browser TTS: periodic nudge prevents Chrome from throttling */
   setInterval(() => {
     if (speechSynthesis.speaking && !speechSynthesis.paused) {
       speechSynthesis.pause();
       speechSynthesis.resume();
     }
   }, 10000);
+
+  /* For Audio-based TTS: resume AudioContext if suspended (Android) */
+  document.addEventListener('visibilitychange', () => {
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  });
 })();
