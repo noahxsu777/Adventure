@@ -8,6 +8,8 @@ const wss = new WebSocketServer({ server });
 
 app.use(express.static('public'));
 
+app.get('/healthz', (_req, res) => res.status(200).type('text/plain').send('ok'));
+
 const PORT = process.env.PORT || 3000;
 
 /** Track active TikTok connections per WebSocket client */
@@ -140,6 +142,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
