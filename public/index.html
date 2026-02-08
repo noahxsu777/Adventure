@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikTok Live Chat TTS</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- ========== Connection Bar ========== -->
+  <header id="header">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 48 48" fill="none"><path d="M34 6h-4a10 10 0 0 0 10 10v4a14 14 0 0 1-10-4v16a12 12 0 1 1-12-12v4a8 8 0 1 0 8 8V6h8Z" fill="#fe2c55"/><path d="M30 6h-4a10 10 0 0 0 10 10v4a14 14 0 0 1-10-4v16a12 12 0 1 1-12-12v4a8 8 0 1 0 8 8V6h8Z" fill="#25f4ee" opacity=".7"/></svg>
+      <span>TikTok Live TTS</span>
+    </div>
+    <div class="connect-bar">
+      <input id="usernameInput" type="text" placeholder="Enter TikTok username" autocomplete="off" />
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" class="hidden">Disconnect</button>
+      <span id="statusBadge" class="badge badge-off">Offline</span>
+    </div>
+  </header>
+
+  <!-- ========== Main Layout ========== -->
+  <main>
+    <!-- Left: Chat Panel -->
+    <section id="chatPanel">
+      <div class="panel-header">
+        <h2>Live Chat</h2>
+        <div class="event-toggles">
+          <label><input type="checkbox" id="toggleChat" checked /><span class="chip">💬 Chat</span></label>
+          <label><input type="checkbox" id="toggleGift" checked /><span class="chip">🎁 Gifts</span></label>
+          <label><input type="checkbox" id="toggleLike" checked /><span class="chip">❤️ Likes</span></label>
+          <label><input type="checkbox" id="toggleFollow" checked /><span class="chip">➕ Follows</span></label>
+        </div>
+      </div>
+      <div id="chatMessages"></div>
+    </section>
+
+    <!-- Right: TTS Controls -->
+    <aside id="ttsPanel">
+      <h2>TTS Controls</h2>
+
+      <!-- Audio Controls -->
+      <div class="control-group">
+        <div class="btn-row">
+          <button id="ttsPlayBtn" title="Play">▶</button>
+          <button id="ttsPauseBtn" title="Pause">⏸</button>
+          <button id="ttsStopBtn" title="Stop">⏹</button>
+        </div>
+
+        <label class="slider-label">
+          Volume
+          <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.8" aria-label="Speech volume" />
+        </label>
+
+        <label class="slider-label">
+          Speed
+          <input id="speedSlider" type="range" min="0.5" max="3" step="0.1" value="1" aria-label="Speech speed" />
+          <span id="speedValue">1×</span>
+        </label>
+
+        <label class="select-label">
+          Voice
+          <select id="voiceSelect"></select>
+        </label>
+
+        <label class="toggle-label">
+          <input id="readUsernameToggle" type="checkbox" checked />
+          Read username
+        </label>
+      </div>
+
+      <!-- Filter System -->
+      <div class="control-group">
+        <h3>Filters</h3>
+        <label class="toggle-label"><input id="filterEnabled" type="checkbox" /> Enable keyword filter</label>
+        <input id="filterKeywords" type="text" placeholder="keyword1, keyword2, …" disabled />
+      </div>
+
+      <!-- TTS Queue -->
+      <div class="control-group">
+        <h3>Queue <span id="queueCount" class="badge badge-sm">0</span></h3>
+        <ul id="queueList"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
