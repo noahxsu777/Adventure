@@ -1,15 +1,15 @@
-# fly.toml app configuration file generated for adventure-9kxwlw
+# fly.toml app configuration file generated for adventure-rus-hq on 2026-02-08T16:31:58Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'adventure-9kxwlw'
-primary_region = 'lax'
+app = 'adventure-rus-hq'
+primary_region = 'ewr'
 
 [build]
 
 [http_service]
-  internal_port = 3000
+  internal_port = 8080
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
@@ -17,6 +17,7 @@ primary_region = 'lax'
   processes = ['app']
 
 [[vm]]
-  memory = '256mb'
+  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
