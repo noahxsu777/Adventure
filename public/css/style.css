@@ -107,11 +107,39 @@ html, body {
 .hidden { display: none !important; }
 
 /* ============================================================
+   Tab Navigation
+   ============================================================ */
+#tabNav {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+}
+
+.tab-btn {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-content { display: none; }
+.tab-content.active { display: flex; }
+
+/* ============================================================
    Main Layout
    ============================================================ */
-main {
-  display: flex;
-  height: calc(100vh - 52px);
+#mainTab {
+  height: calc(100vh - 94px);
 }
 
 /* --- Chat Panel --- */
@@ -205,6 +233,14 @@ main {
 .msg.like  .msg-text { color: #ff5252; }
 .msg.follow .msg-text { color: var(--accent2); }
 
+/* Gift image inside chat message */
+.msg-gift-img {
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
 /* ============================================================
    TTS Panel (right sidebar)
    ============================================================ */
@@ -296,6 +332,20 @@ main {
   font-size: 0.82rem;
 }
 
+/* Test TTS button */
+.btn-test {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent2);
+  color: #000;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.btn-test:hover { opacity: .85; }
+
 /* Queue list */
 #queueList {
   list-style: none;
@@ -323,14 +373,134 @@ main {
 }
 
 /* ============================================================
+   Gift Gallery Tab
+   ============================================================ */
+#giftGalleryTab {
+  flex-direction: column;
+  padding: 20px;
+  overflow-y: auto;
+  height: calc(100vh - 94px);
+}
+
+.gallery-header h2 { font-size: 1.1rem; margin-bottom: 4px; }
+.gallery-desc { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 16px; }
+
+.gift-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.gift-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  transition: border-color .15s;
+}
+
+.gift-card:hover { border-color: var(--accent); }
+
+.gift-card img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+.gift-card-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.gift-card-diamonds {
+  font-size: 0.75rem;
+  color: var(--accent2);
+}
+
+.gift-card-count {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.gift-card select {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.gift-card .btn-play-sound {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.gift-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 0.9rem;
+}
+
+/* Sound Library */
+.sound-library {
+  max-width: 600px;
+}
+
+.sound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sound-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+
+.sound-item button {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent2);
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sound-item span { flex: 1; }
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width: 768px) {
-  main { flex-direction: column; }
+  #mainTab { flex-direction: column; }
 
   #chatPanel { border-right: none; border-bottom: 1px solid var(--border); height: 55vh; }
 
   #ttsPanel { width: 100%; height: 45vh; }
 
   #header { flex-direction: column; align-items: flex-start; }
+
+  .gift-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
 }

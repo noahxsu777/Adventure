@@ -7,8 +7,36 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(express.static('public'));
+app.use(express.json());
 
 app.get('/healthz', (_req, res) => res.status(200).type('text/plain').send('ok'));
+
+/* Proxy StreamElements TTS to avoid CORS issues */
+const SE_VOICES = new Set([
+  'Brian','Amy','Emma','Geraint','Russell','Nicole','Joey','Justin','Matthew',
+  'Ivy','Joanna','Kendra','Kimberly','Salli','Raveena','Aditi','Zhiyu',
+  'Mads','Naja','Ruben','Lotte','Lea','Celine','Mathieu','Hans','Marlene',
+  'Vicki','Conchita','Enrique','Miguel','Penelope','Lucia','Mia','Giorgio',
+  'Carla','Bianca','Takumi','Mizuki','Seoyeon','Liv','Ewa','Jacek','Jan',
+  'Maja','Ricardo','Vitoria','Camila','Cristiano','Ines','Carmen','Maxim',
+  'Tatyana','Astrid','Filiz','Gwyneth'
+]);
+
+app.get('/api/tts', async (req, res) => {
+  const { voice, text } = req.query;
+  if (!text) return res.status(400).send('Missing text');
+  const safeName = SE_VOICES.has(voice) ? voice : 'Brian';
+  try {
+    const url = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(safeName)}&text=${encodeURIComponent(text)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`SE API ${resp.status}`);
+    res.set('Content-Type', 'audio/mpeg');
+    const buffer = await resp.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    res.status(502).send('TTS proxy error: ' + err.message);
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 
@@ -49,7 +77,8 @@ wss.on('connection', (ws) => {
       /* Dynamic import because tiktok-live-connector is ESM-only in v2 */
       import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent }) => {
         const connection = new TikTokLiveConnection(username, {
-          processInitialData: false   // ignore chat history
+          processInitialData: false,       // ignore chat history
+          enableExtendedGiftInfo: true     // full gift metadata (name, image, diamonds)
         });
 
         clients.set(ws, connection);
@@ -78,7 +107,9 @@ wss.on('connection', (ws) => {
             user: data.user?.uniqueId || 'unknown',
             nickname: data.user?.nickname || '',
             giftId: data.giftId,
-            giftName: data.giftName || `Gift #${data.giftId}`,
+            giftName: data.giftName || data.extendedGiftInfo?.name || `Gift #${data.giftId}`,
+            giftPictureUrl: data.giftPictureUrl || data.extendedGiftInfo?.image?.url_list?.[0] || '',
+            diamondCount: data.diamondCount || data.extendedGiftInfo?.diamond_count || 0,
             repeatCount: data.repeatCount || 1,
             profilePictureUrl: data.user?.profilePictureUrl || ''
           });

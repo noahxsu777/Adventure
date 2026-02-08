@@ -21,8 +21,14 @@
     </div>
   </header>
 
-  <!-- ========== Main Layout ========== -->
-  <main>
+  <!-- ========== Tab Navigation ========== -->
+  <nav id="tabNav">
+    <button class="tab-btn active" data-tab="mainTab">💬 Live Chat</button>
+    <button class="tab-btn" data-tab="giftGalleryTab">🎁 Gift Gallery</button>
+  </nav>
+
+  <!-- ========== Main Layout (Live Chat Tab) ========== -->
+  <main id="mainTab" class="tab-content active">
     <!-- Left: Chat Panel -->
     <section id="chatPanel">
       <div class="panel-header">
@@ -60,10 +66,85 @@
           <span id="speedValue">1×</span>
         </label>
 
+        <!-- Voice Provider -->
         <label class="select-label">
+          Provider
+          <select id="ttsProvider">
+            <option value="browser">🖥️ Browser Voices</option>
+            <option value="streamelements">🎙️ StreamElements</option>
+          </select>
+        </label>
+
+        <!-- Browser voice select -->
+        <label class="select-label" id="browserVoiceGroup">
           Voice
           <select id="voiceSelect"></select>
         </label>
+
+        <!-- StreamElements voice select -->
+        <label class="select-label hidden" id="seVoiceGroup">
+          Voice
+          <select id="seVoiceSelect">
+            <option value="Brian">Brian</option>
+            <option value="Amy">Amy</option>
+            <option value="Emma">Emma</option>
+            <option value="Geraint">Geraint</option>
+            <option value="Russell">Russell</option>
+            <option value="Nicole">Nicole</option>
+            <option value="Joey">Joey</option>
+            <option value="Justin">Justin</option>
+            <option value="Matthew">Matthew</option>
+            <option value="Ivy">Ivy</option>
+            <option value="Joanna">Joanna</option>
+            <option value="Kendra">Kendra</option>
+            <option value="Kimberly">Kimberly</option>
+            <option value="Salli">Salli</option>
+            <option value="Raveena">Raveena</option>
+            <option value="Aditi">Aditi</option>
+            <option value="Zhiyu">Zhiyu (中文)</option>
+            <option value="Mads">Mads (Dansk)</option>
+            <option value="Naja">Naja (Dansk)</option>
+            <option value="Ruben">Ruben (NL)</option>
+            <option value="Lotte">Lotte (NL)</option>
+            <option value="Lea">Lea (FR)</option>
+            <option value="Celine">Céline (FR)</option>
+            <option value="Mathieu">Mathieu (FR)</option>
+            <option value="Hans">Hans (DE)</option>
+            <option value="Marlene">Marlene (DE)</option>
+            <option value="Vicki">Vicki (DE)</option>
+            <option value="Conchita">Conchita (ES)</option>
+            <option value="Enrique">Enrique (ES)</option>
+            <option value="Miguel">Miguel (ES-US)</option>
+            <option value="Penelope">Penélope (ES-US)</option>
+            <option value="Lucia">Lucia (ES)</option>
+            <option value="Mia">Mia (ES-MX)</option>
+            <option value="Giorgio">Giorgio (IT)</option>
+            <option value="Carla">Carla (IT)</option>
+            <option value="Bianca">Bianca (IT)</option>
+            <option value="Takumi">Takumi (JP)</option>
+            <option value="Mizuki">Mizuki (JP)</option>
+            <option value="Seoyeon">Seoyeon (KR)</option>
+            <option value="Liv">Liv (NB)</option>
+            <option value="Ewa">Ewa (PL)</option>
+            <option value="Jacek">Jacek (PL)</option>
+            <option value="Jan">Jan (PL)</option>
+            <option value="Maja">Maja (PL)</option>
+            <option value="Ricardo">Ricardo (PT-BR)</option>
+            <option value="Vitoria">Vitória (PT-BR)</option>
+            <option value="Camila">Camila (PT-BR)</option>
+            <option value="Cristiano">Cristiano (PT)</option>
+            <option value="Ines">Inês (PT)</option>
+            <option value="Carmen">Carmen (RO)</option>
+            <option value="Maxim">Maxim (RU)</option>
+            <option value="Tatyana">Tatyana (RU)</option>
+            <option value="Astrid">Astrid (SV)</option>
+            <option value="Filiz">Filiz (TR)</option>
+            <option value="Gwyneth">Gwyneth (CY)</option>
+          </select>
+        </label>
+
+        <!-- Test TTS button -->
+        <button id="testTtsBtn" class="btn-test">🔊 Test TTS</button>
 
         <label class="toggle-label">
           <input id="readUsernameToggle" type="checkbox" checked />
@@ -85,6 +166,23 @@
       </div>
     </aside>
   </main>
+
+  <!-- ========== Gift Gallery Tab ========== -->
+  <section id="giftGalleryTab" class="tab-content">
+    <div class="gallery-header">
+      <h2>🎁 Gift Gallery & Sounds</h2>
+      <p class="gallery-desc">Gifts received during the live stream appear here. Assign a sound to each gift so it plays when someone sends it.</p>
+    </div>
+    <div id="giftGalleryGrid" class="gift-grid">
+      <div class="gift-empty">Connect to a live stream to see gifts here.</div>
+    </div>
+
+    <!-- Built-in alert sounds -->
+    <div class="control-group sound-library">
+      <h3>🔔 Available Alert Sounds</h3>
+      <div id="soundLibrary" class="sound-list"></div>
+    </div>
+  </section>
 
   <script src="/js/app.js"></script>
 </body>
