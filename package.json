@@ -1,0 +1,17 @@
+{
+  "name": "tiktok-live-chat-tts",
+  "version": "1.0.0",
+  "description": "TikTok Live Chat TTS Web App with real-time chat events and text-to-speech",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["tiktok", "live", "chat", "tts", "websocket"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "tiktok-live-connector": "^2.1.0",
+    "ws": "^8.18.0"
+  }
+}
