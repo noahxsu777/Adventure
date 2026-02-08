@@ -30,6 +30,8 @@
   const seVoiceSelect   = $('#seVoiceSelect');
   const gttsLangGroup   = $('#gttsLangGroup');
   const gttsLangSelect  = $('#gttsLangSelect');
+  const tiktokVoiceGroup = $('#tiktokVoiceGroup');
+  const tiktokVoiceSelect = $('#tiktokVoiceSelect');
   const testTtsBtn      = $('#testTtsBtn');
 
   const filterEnabled   = $('#filterEnabled');
@@ -54,6 +56,39 @@
   const seenIds = new Set();
   const BASE_RECONNECT_DELAY = 3000;
   const MAX_RECONNECT_DELAY = 30000;
+  let wakeLock = null;
+
+  /* ---------- Service Worker Registration ---------- */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => console.log('SW registered, scope:', reg.scope))
+      .catch((err) => console.warn('SW registration failed:', err));
+  }
+
+  /* ---------- Request notification permission ---------- */
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  /* ---------- Wake Lock: keep screen/device awake ---------- */
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch { /* device doesn't support or permission denied */ }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+  }
+
+  /* Re-acquire wake lock on visibility change */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ttsEnabled) {
+      requestWakeLock();
+    }
+  });
 
   /* Gift gallery: { giftId: { name, imageUrl, diamonds, count } } */
   const giftRegistry = {};
@@ -130,6 +165,7 @@
     browserVoiceGroup.classList.toggle('hidden', val !== 'browser');
     seVoiceGroup.classList.toggle('hidden', val !== 'streamelements');
     gttsLangGroup.classList.toggle('hidden', val !== 'googletranslate');
+    tiktokVoiceGroup.classList.toggle('hidden', val !== 'tiktok');
   });
 
   /* ---------- TTS Toggle ---------- */
@@ -137,12 +173,16 @@
     ttsEnabled = !ttsEnabled;
     ttsToggleBtn.classList.toggle('active', ttsEnabled);
     ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
-    if (!ttsEnabled) {
+    if (ttsEnabled) {
+      requestWakeLock();
+    } else {
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
       isSpeaking = false;
       renderQueue();
+      releaseWakeLock();
+      updateMediaSession(null);
     }
   });
 
@@ -457,6 +497,45 @@
     });
   }
 
+  /* ---------- Media Session API ---------- */
+  function updateMediaSession(text) {
+    if (!('mediaSession' in navigator)) return;
+    if (!text) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+      return;
+    }
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: text.length > 60 ? text.slice(0, 57) + '…' : text,
+      artist: 'TikTok Live TTS',
+      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+    });
+    navigator.mediaSession.playbackState = 'playing';
+
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (currentAudio) currentAudio.pause();
+      navigator.mediaSession.playbackState = 'paused';
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (currentAudio) currentAudio.play();
+      navigator.mediaSession.playbackState = 'playing';
+    });
+    navigator.mediaSession.setActionHandler('stop', () => {
+      speechSynthesis.cancel();
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      ttsQueue.length = 0;
+      isSpeaking = false;
+      renderQueue();
+      updateMediaSession(null);
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      speechSynthesis.cancel();
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      isSpeaking = false;
+      processQueue();
+    });
+  }
+
   /* ---------- TTS System ---------- */
   function populateVoices() {
     const voices = speechSynthesis.getVoices();
@@ -472,11 +551,12 @@
   speechSynthesis.addEventListener('voiceschanged', populateVoices);
   populateVoices();
 
-  function speakViaAudio(url) {
+  function speakViaAudio(url, text) {
     const audio = new Audio(url);
     currentAudio = audio;
     audio.volume = parseFloat(volumeSlider.value);
     audio.playbackRate = parseFloat(speedSlider.value);
+    updateMediaSession(text || 'Reading message…');
     audio.onended = () => { currentAudio = null; isSpeaking = false; processQueue(); };
     audio.onerror = () => { currentAudio = null; isSpeaking = false; processQueue(); };
     audio.play().catch(() => { currentAudio = null; isSpeaking = false; processQueue(); });
@@ -485,13 +565,19 @@
   function speakStreamElements(text) {
     const voice = seVoiceSelect.value;
     const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(text)}`;
-    speakViaAudio(url);
+    speakViaAudio(url, text);
   }
 
   function speakGoogleTranslate(text) {
     const lang = gttsLangSelect.value;
     const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(text)}`;
-    speakViaAudio(url);
+    speakViaAudio(url, text);
+  }
+
+  function speakTikTok(text) {
+    const voice = tiktokVoiceSelect.value;
+    const url = `/api/tiktok-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(text)}`;
+    speakViaAudio(url, text);
   }
 
   function enqueueTTS(user, text) {
@@ -531,6 +617,10 @@
       speakGoogleTranslate(next);
       return;
     }
+    if (provider === 'tiktok') {
+      speakTikTok(next);
+      return;
+    }
 
     const utter = new SpeechSynthesisUtterance(next);
     utter.volume = parseFloat(volumeSlider.value);
@@ -540,6 +630,7 @@
     const idx = parseInt(voiceSelect.value, 10);
     if (voices[idx]) utter.voice = voices[idx];
 
+    updateMediaSession(next);
     utter.onend = () => { isSpeaking = false; processQueue(); };
     utter.onerror = () => { isSpeaking = false; processQueue(); };
 
@@ -566,6 +657,7 @@
       const audio = new Audio(url);
       audio.volume = parseFloat(volumeSlider.value);
       audio.playbackRate = parseFloat(speedSlider.value);
+      updateMediaSession(testText);
       audio.play().catch(() => {});
     } else if (provider === 'googletranslate') {
       const lang = gttsLangSelect.value;
@@ -573,6 +665,15 @@
       const audio = new Audio(url);
       audio.volume = parseFloat(volumeSlider.value);
       audio.playbackRate = parseFloat(speedSlider.value);
+      updateMediaSession(testText);
+      audio.play().catch(() => {});
+    } else if (provider === 'tiktok') {
+      const voice = tiktokVoiceSelect.value;
+      const url = `/api/tiktok-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
+      const audio = new Audio(url);
+      audio.volume = parseFloat(volumeSlider.value);
+      audio.playbackRate = parseFloat(speedSlider.value);
+      updateMediaSession(testText);
       audio.play().catch(() => {});
     } else {
       const utter = new SpeechSynthesisUtterance(testText);
@@ -581,6 +682,7 @@
       const voices = speechSynthesis.getVoices();
       const idx = parseInt(voiceSelect.value, 10);
       if (voices[idx]) utter.voice = voices[idx];
+      updateMediaSession(testText);
       speechSynthesis.speak(utter);
     }
   });
@@ -613,10 +715,20 @@
     }
   }, 10000);
 
+  /* Keep Service Worker alive with periodic pings */
+  setInterval(() => {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('keepalive');
+    }
+  }, 20000);
+
   /* Resume AudioContext if suspended (e.g. iOS/Android background) */
   document.addEventListener('visibilitychange', () => {
     if (audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
   });
+
+  /* Request wake lock on load if TTS is enabled */
+  if (ttsEnabled) requestWakeLock();
 })();

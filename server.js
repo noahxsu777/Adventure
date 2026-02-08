@@ -62,6 +62,39 @@ app.get('/api/gtts', async (req, res) => {
   }
 });
 
+/* TikTok TTS proxy — uses the same endpoint TikTok uses for text-to-speech */
+const TIKTOK_VOICES = new Set([
+  'en_us_001','en_us_006','en_us_007','en_us_009','en_us_010',
+  'en_uk_001','en_uk_003','en_au_001','en_au_002',
+  'es_002','es_mx_002','fr_001','fr_002','de_001','de_002',
+  'it_male_m18','pt_br_001','pt_br_003',
+  'jp_001','jp_006','kr_002','kr_003','id_001'
+]);
+
+app.get('/api/tiktok-tts', async (req, res) => {
+  const { voice, text } = req.query;
+  if (!text) return res.status(400).send('Missing text');
+  const safeVoice = TIKTOK_VOICES.has(voice) ? voice : 'en_us_001';
+  const TIKTOK_MAX_TEXT_LENGTH = 300; /* TikTok API limitation */
+
+  try {
+    const url = `https://tiktok-tts.weilnet.workers.dev/api/generation`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, TIKTOK_MAX_TEXT_LENGTH), voice: safeVoice })
+    });
+    if (!resp.ok) throw new Error(`TikTok TTS ${resp.status}`);
+    const json = await resp.json();
+    if (!json.data) throw new Error('No audio data returned');
+    const audioBuffer = Buffer.from(json.data, 'base64');
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(audioBuffer);
+  } catch (err) {
+    res.status(502).send('TikTok TTS proxy error: ' + err.message);
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 /** Track active TikTok connections per WebSocket client */
