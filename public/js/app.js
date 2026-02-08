@@ -41,9 +41,6 @@
   const giftGalleryGrid = $('#giftGalleryGrid');
   const soundLibrary    = $('#soundLibrary');
 
-  const connectionOverlay = $('#connectionOverlay');
-  const connectionSteps   = $('#connectionSteps');
-
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
@@ -51,10 +48,12 @@
   let ttsEnabled = false;
   let userDisconnected = false;
   let currentUsername = '';
-  let currentAudio = null;            // track current Audio element for background playback
+  let currentAudio = null;
+  let reconnectAttempts = 0;
   const MAX_CHAT_ITEMS = 300;
   const seenIds = new Set();
-  const RECONNECT_DELAY = 3000;
+  const BASE_RECONNECT_DELAY = 3000;
+  const MAX_RECONNECT_DELAY = 30000;
 
   /* Gift gallery: { giftId: { name, imageUrl, diamonds, count } } */
   const giftRegistry = {};
@@ -62,7 +61,7 @@
   /* Gift sound assignments: { giftId: soundId } */
   const giftSounds = {};
 
-  /* ---------- Built-in alert sounds (generated via AudioContext) ---------- */
+  /* ---------- Built-in alert sounds ---------- */
   const ALERT_SOUNDS = [
     { id: 'chime',     name: '🔔 Chime',      freq: 880,  type: 'sine',     dur: 0.4 },
     { id: 'ding',      name: '✨ Ding',       freq: 1200, type: 'sine',     dur: 0.25 },
@@ -147,50 +146,18 @@
     }
   });
 
-  /* ---------- Connection Status Overlay ---------- */
-  function showConnectionOverlay() {
-    connectionSteps.innerHTML = '';
-    connectionOverlay.classList.remove('hidden');
-  }
-
-  function hideConnectionOverlay() {
-    connectionOverlay.classList.add('hidden');
-  }
-
-  function addConnectionStep(message, state) {
-    /* state: 'active', 'done', 'error' */
-    /* Mark previous active steps as done */
-    connectionSteps.querySelectorAll('.connection-step.active').forEach(el => {
-      el.classList.remove('active');
-      el.classList.add('done');
-    });
-
-    const step = document.createElement('div');
-    step.className = `connection-step ${state}`;
-    step.innerHTML = `<div class="connection-step-dot"></div><span>${message}</span>`;
-    connectionSteps.appendChild(step);
-
-    /* Auto-hide on success or error after a delay */
-    if (state === 'done' || state === 'error') {
-      setTimeout(hideConnectionOverlay, state === 'done' ? 1500 : 3000);
-    }
-  }
-
-  /* ---------- WebSocket with auto-reconnect ---------- */
+  /* ---------- WebSocket with exponential backoff reconnect ---------- */
   function connectWs(username) {
     currentUsername = username;
     userDisconnected = false;
-
-    showConnectionOverlay();
-    addConnectionStep('🌐 Connecting to server…', 'active');
+    setStatus('connecting');
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}`);
 
     ws.addEventListener('open', () => {
-      addConnectionStep('✅ Server connected!', 'done');
+      reconnectAttempts = 0;
       ws.send(JSON.stringify({ type: 'connect', username }));
-      setStatus('connecting');
     });
 
     ws.addEventListener('message', (e) => {
@@ -202,11 +169,13 @@
     ws.addEventListener('close', () => {
       if (!userDisconnected && currentUsername) {
         setStatus('reconnecting');
+        reconnectAttempts++;
+        const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
         setTimeout(() => {
           if (!userDisconnected && currentUsername) {
             connectWs(currentUsername);
           }
-        }, RECONNECT_DELAY);
+        }, delay);
       } else {
         setStatus('offline');
       }
@@ -220,7 +189,7 @@
   function disconnectWs() {
     userDisconnected = true;
     currentUsername = '';
-    hideConnectionOverlay();
+    reconnectAttempts = 0;
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -231,7 +200,7 @@
 
   function setStatus(s) {
     if (s === 'online') {
-      statusBadge.textContent = 'Live';
+      statusBadge.textContent = '● Live';
       statusBadge.className = 'badge badge-on';
     } else if (s === 'connecting') {
       statusBadge.textContent = 'Connecting…';
@@ -251,14 +220,7 @@
   function handleEvent(msg) {
     switch (msg.type) {
       case 'status':
-        /* Animated connection steps from server */
-        if (msg.step === 'success') {
-          addConnectionStep(msg.message, 'done');
-        } else if (msg.step === 'error') {
-          addConnectionStep(msg.message, 'error');
-        } else {
-          addConnectionStep(msg.message, 'active');
-        }
+        /* Server status steps — just log, no overlay */
         break;
       case 'connected':
         setStatus('online');
@@ -435,7 +397,7 @@
         card.appendChild(gImg);
       } else {
         const placeholder = document.createElement('div');
-        placeholder.style.cssText = 'width:64px;height:64px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:2rem;';
+        placeholder.style.cssText = 'width:56px;height:56px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;';
         placeholder.textContent = '🎁';
         card.appendChild(placeholder);
       }
@@ -509,7 +471,6 @@
   speechSynthesis.addEventListener('voiceschanged', populateVoices);
   populateVoices();
 
-  /* --- Audio-based TTS (works in background on Android) --- */
   function speakViaAudio(url) {
     const audio = new Audio(url);
     currentAudio = audio;
@@ -532,7 +493,7 @@
     speakViaAudio(url);
   }
 
-  function enqueueTTS(user, text, eventType) {
+  function enqueueTTS(user, text) {
     if (!ttsEnabled) return;
 
     const id = `${user}:${text}`;
@@ -570,7 +531,6 @@
       return;
     }
 
-    /* Browser TTS (may not work in background on Android) */
     const utter = new SpeechSynthesisUtterance(next);
     utter.volume = parseFloat(volumeSlider.value);
     utter.rate   = parseFloat(speedSlider.value);
@@ -624,7 +584,7 @@
     }
   });
 
-  /* ---------- Other controls ---------- */
+  /* ---------- Controls ---------- */
   speedSlider.addEventListener('input', () => {
     speedValue.textContent = `${parseFloat(speedSlider.value).toFixed(1)}×`;
   });
@@ -633,7 +593,6 @@
     filterKeywords.disabled = !filterEnabled.checked;
   });
 
-  /* ---------- Connection buttons ---------- */
   connectBtn.addEventListener('click', () => {
     const u = usernameInput.value.trim();
     if (u) connectWs(u);
@@ -645,8 +604,7 @@
 
   disconnectBtn.addEventListener('click', disconnectWs);
 
-  /* ---------- Keep TTS alive when tab hidden ---------- */
-  /* For browser TTS: periodic nudge prevents Chrome from throttling */
+  /* ---------- Keep TTS alive in background ---------- */
   setInterval(() => {
     if (speechSynthesis.speaking && !speechSynthesis.paused) {
       speechSynthesis.pause();
@@ -654,7 +612,7 @@
     }
   }, 10000);
 
-  /* For Audio-based TTS: resume AudioContext if suspended (Android) */
+  /* Resume AudioContext if suspended (e.g. iOS/Android background) */
   document.addEventListener('visibilitychange', () => {
     if (audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume();

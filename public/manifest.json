@@ -1,0 +1,17 @@
+{
+  "name": "TikTok Live TTS",
+  "short_name": "Live TTS",
+  "description": "Real-time TikTok Live chat text-to-speech",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><rect width='48' height='48' rx='12' fill='%23000'/><path d='M34 6h-4a10 10 0 0 0 10 10v4a14 14 0 0 1-10-4v16a12 12 0 1 1-12-12v4a8 8 0 1 0 8 8V6h8Z' fill='%23fe2c55'/></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

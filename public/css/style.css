@@ -1,43 +1,55 @@
 /* ============================================================
-   TikTok Live Chat TTS – Dark Theme
+   TikTok Live Chat TTS – iOS Native Style
    ============================================================ */
 :root {
-  --bg:          #121212;
-  --surface:     #1e1e1e;
-  --surface2:    #2a2a2a;
-  --border:      #333;
-  --text:        #eee;
-  --text-dim:    #999;
+  --bg:          #000000;
+  --surface:     #1c1c1e;
+  --surface2:    #2c2c2e;
+  --border:      #38383a;
+  --text:        #ffffff;
+  --text-dim:    #8e8e93;
   --accent:      #fe2c55;
   --accent2:     #25f4ee;
-  --success:     #00c853;
-  --radius:      10px;
+  --success:     #30d158;
+  --radius:      12px;
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  overflow: hidden;
 }
 
-/* --- Scrollbar --- */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--surface); }
+/* --- Scrollbar (minimal) --- */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+.hidden { display: none !important; }
+
 /* ============================================================
-   Header
+   Header – iOS navigation bar style
    ============================================================ */
 #header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  padding: calc(var(--safe-top) + 8px) 16px 8px;
+  background: rgba(28, 28, 30, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 0.5px solid rgba(255,255,255,0.1);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -46,40 +58,47 @@ html, body {
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1rem;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .connect-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
 }
 
 .connect-bar input {
   padding: 8px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  border-radius: 10px;
+  border: none;
   background: var(--surface2);
   color: var(--text);
-  font-size: 0.9rem;
-  width: 200px;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+}
+
+.connect-bar input:focus {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .connect-bar button {
-  padding: 8px 18px;
+  padding: 8px 14px;
   border: none;
-  border-radius: var(--radius);
+  border-radius: 10px;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   cursor: pointer;
-  transition: opacity .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-
-.connect-bar button:hover { opacity: .85; }
 
 #connectBtn {
   background: var(--accent);
@@ -89,136 +108,49 @@ html, body {
 #disconnectBtn {
   background: var(--surface2);
   color: var(--text);
-  border: 1px solid var(--border);
 }
 
 .badge {
   display: inline-block;
-  padding: 3px 10px;
+  padding: 3px 8px;
   border-radius: 20px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .badge-off  { background: var(--surface2); color: var(--text-dim); }
 .badge-on   { background: var(--success); color: #000; }
 .badge-connecting { background: var(--accent); color: #fff; animation: badgePulse 1.5s ease infinite; }
-.badge-sm   { font-size: 0.7rem; padding: 2px 8px; background: var(--accent); color: #fff; }
+.badge-sm   { font-size: 0.65rem; padding: 2px 6px; background: var(--accent); color: #fff; }
 
 @keyframes badgePulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 
-.hidden { display: none !important; }
-
 /* ============================================================
-   Connection Status Overlay
-   ============================================================ */
-.connection-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  animation: overlayIn .3s ease;
-}
-
-.connection-overlay.hidden { display: none !important; }
-
-@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
-
-.connection-card {
-  background: var(--surface);
-  border-radius: 16px;
-  padding: 32px 40px;
-  min-width: 320px;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  border: 1px solid var(--border);
-  animation: cardIn .4s ease;
-}
-
-@keyframes cardIn { from { opacity: 0; transform: scale(.9) translateY(20px); } to { opacity: 1; transform: none; } }
-
-.connection-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.connection-steps {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.connection-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--surface2);
-  font-size: 0.85rem;
-  animation: stepIn .3s ease;
-  transition: background .3s;
-}
-
-@keyframes stepIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
-
-.connection-step.active { background: var(--accent); color: #fff; }
-.connection-step.done { background: var(--success); color: #000; }
-.connection-step.error { background: var(--accent); color: #fff; }
-
-.connection-step-icon {
-  font-size: 1.1rem;
-  flex-shrink: 0;
-}
-
-.connection-step-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  flex-shrink: 0;
-  animation: pulse 1s ease infinite;
-}
-
-.connection-step.done .connection-step-dot,
-.connection-step.error .connection-step-dot { animation: none; }
-
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-
-/* ============================================================
-   Tab Navigation
+   Tab Navigation – iOS tab bar style
    ============================================================ */
 #tabNav {
   display: flex;
-  gap: 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0 20px;
+  background: rgba(28, 28, 30, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 0.5px solid rgba(255,255,255,0.1);
+  padding: 0 var(--safe-left);
 }
 
 .tab-btn {
-  padding: 10px 20px;
+  flex: 1;
+  padding: 10px 0;
   background: none;
   border: none;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
   transition: color .15s, border-color .15s;
+  text-align: center;
 }
 
 .tab-btn:hover { color: var(--text); }
@@ -228,32 +160,24 @@ html, body {
 .tab-content.active { display: flex; }
 
 /* ============================================================
-   Main Layout
+   Chat Tab – full height scrolling
    ============================================================ */
 #mainTab {
-  height: calc(100vh - 94px);
-}
-
-/* --- Chat Panel --- */
-#chatPanel {
-  flex: 1;
-  display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
-  min-width: 0;
+  height: calc(100vh - 90px);
+  height: calc(100dvh - 90px);
 }
 
 .panel-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
   background: var(--surface);
+  border-bottom: 0.5px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
 }
-
-.panel-header h2 { font-size: 1rem; margin-bottom: 8px; }
 
 .event-toggles {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -264,7 +188,7 @@ html, body {
   display: inline-block;
   padding: 4px 10px;
   border-radius: 20px;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   background: var(--surface2);
   border: 1px solid var(--border);
   transition: background .15s, border-color .15s;
@@ -280,10 +204,11 @@ html, body {
 #chatMessages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px calc(var(--safe-bottom) + 8px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* Chat message rows */
@@ -294,14 +219,11 @@ html, body {
   padding: 6px 10px;
   border-radius: var(--radius);
   background: var(--surface);
-  animation: fadeIn .25s ease;
 }
 
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-
 .msg-avatar {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -312,12 +234,12 @@ html, body {
 
 .msg-user {
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--accent2);
 }
 
 .msg-text {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   word-break: break-word;
 }
 
@@ -325,68 +247,67 @@ html, body {
 .msg.like  .msg-text { color: #ff5252; }
 .msg.follow .msg-text { color: var(--accent2); }
 
-/* Gift image inside chat message */
 .msg-gift-img {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   vertical-align: middle;
-  margin-right: 4px;
+  margin-right: 3px;
 }
 
 /* ============================================================
-   TTS Panel (right sidebar)
+   TTS Tab – scrollable controls
    ============================================================ */
-#ttsPanel {
-  width: 320px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  padding: 16px;
-  background: var(--surface);
-  display: flex;
+#ttsTab {
   flex-direction: column;
-  gap: 16px;
+  height: calc(100vh - 90px);
+  height: calc(100dvh - 90px);
 }
 
-#ttsPanel h2 {
-  font-size: 1rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
+.tts-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px calc(var(--safe-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .control-group {
-  background: var(--surface2);
+  background: var(--surface);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .control-group h3 {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
   display: flex;
   align-items: center;
   gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* TTS Toggle button */
 .btn-tts-toggle {
-  padding: 10px 16px;
+  padding: 14px 16px;
   border: none;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface2);
   color: var(--text-dim);
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: background .15s, color .15s;
-  border: 2px solid var(--border);
+  transition: background .2s, color .2s;
 }
 
 .btn-tts-toggle.active {
   background: var(--success);
   color: #000;
-  border-color: var(--success);
 }
 
 .slider-label, .select-label, .toggle-label {
@@ -400,34 +321,38 @@ html, body {
 .slider-label input[type="range"] {
   flex: 1;
   accent-color: var(--accent);
+  height: 4px;
 }
 
 .select-label select {
   flex: 1;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: none;
+  background: var(--surface2);
   color: var(--text);
   font-size: 0.82rem;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .toggle-label input[type="checkbox"] {
   accent-color: var(--accent);
+  width: 18px;
+  height: 18px;
 }
 
 #filterKeywords {
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  background: var(--surface2);
   color: var(--text);
   font-size: 0.82rem;
 }
 
-/* Test TTS button */
 .btn-test {
-  padding: 8px 16px;
+  padding: 10px 16px;
   border: none;
   border-radius: var(--radius);
   background: var(--accent2);
@@ -435,14 +360,12 @@ html, body {
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: opacity .15s;
 }
-.btn-test:hover { opacity: .85; }
 
 /* Queue list */
 #queueList {
   list-style: none;
-  max-height: 200px;
+  max-height: 160px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -451,9 +374,9 @@ html, body {
 
 #queueList li {
   padding: 4px 8px;
-  font-size: 0.78rem;
-  border-radius: 6px;
-  background: var(--surface);
+  font-size: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface2);
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -470,19 +393,18 @@ html, body {
    ============================================================ */
 #giftGalleryTab {
   flex-direction: column;
-  padding: 20px;
-  overflow-y: auto;
-  height: calc(100vh - 94px);
+  height: calc(100vh - 90px);
+  height: calc(100dvh - 90px);
 }
 
-.gallery-header h2 { font-size: 1.1rem; margin-bottom: 4px; }
-.gallery-desc { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 16px; }
+.gallery-header h2 { font-size: 1rem; margin-bottom: 4px; }
+.gallery-desc { font-size: 0.78rem; color: var(--text-dim); margin-bottom: 12px; }
 
 .gift-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .gift-card {
@@ -492,52 +414,53 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid var(--border);
-  transition: border-color .15s;
 }
 
 .gift-card:hover { border-color: var(--accent); }
 
 .gift-card img {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
 }
 
 .gift-card-name {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   text-align: center;
 }
 
 .gift-card-diamonds {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--accent2);
 }
 
 .gift-card-count {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text-dim);
 }
 
 .gift-card select {
   width: 100%;
-  padding: 4px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
   background: var(--surface2);
   color: var(--text);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .gift-card .btn-play-sound {
   padding: 4px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   cursor: pointer;
 }
 
@@ -546,54 +469,37 @@ html, body {
   text-align: center;
   color: var(--text-dim);
   padding: 40px 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 /* Sound Library */
-.sound-library {
-  max-width: 600px;
-}
+.sound-library { max-width: 600px; }
 
 .sound-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .sound-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--surface);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface2);
   font-size: 0.82rem;
 }
 
 .sound-item button {
-  padding: 4px 10px;
+  padding: 5px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--accent2);
   color: #000;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .sound-item span { flex: 1; }
-
-/* ============================================================
-   Responsive
-   ============================================================ */
-@media (max-width: 768px) {
-  #mainTab { flex-direction: column; }
-
-  #chatPanel { border-right: none; border-bottom: 1px solid var(--border); height: 55vh; }
-
-  #ttsPanel { width: 100%; height: 45vh; }
-
-  #header { flex-direction: column; align-items: flex-start; }
-
-  .gift-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-}
