@@ -94,101 +94,124 @@ wss.on('connection', (ws) => {
       /* Disconnect previous connection if any */
       const prev = clients.get(ws);
       if (prev) {
-        prev.disconnect();
+        if (prev.reconnectTimer) clearTimeout(prev.reconnectTimer);
+        try { prev.connection.disconnect(); } catch {}
         clients.delete(ws);
       }
 
-      /* Dynamic import because tiktok-live-connector is ESM-only in v2 */
-      broadcast(ws, 'status', { step: 'loading', message: '📦 Loading TikTok connector…' });
-
       import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent }) => {
-        broadcast(ws, 'status', { step: 'initializing', message: '⚙️ Initializing connection…' });
 
-        const connection = new TikTokLiveConnection(username, {
-          processInitialData: false,       // ignore chat history
-          enableExtendedGiftInfo: true     // full gift metadata (name, image, diamonds)
-        });
-
-        clients.set(ws, connection);
-
-        broadcast(ws, 'status', { step: 'connecting', message: `🔍 Searching for @${username}'s live stream…` });
-
-        connection.connect()
-          .then((state) => {
-            console.log(`Connected to ${username} (roomId ${state.roomId})`);
-            broadcast(ws, 'status', { step: 'success', message: `✅ Connected! Room ID: ${state.roomId}` });
-            broadcast(ws, 'connected', { username, roomId: state.roomId });
-          })
-          .catch((err) => {
-            console.error('Connection failed:', err.message);
-            broadcast(ws, 'status', { step: 'error', message: `❌ ${err.message}` });
-            broadcast(ws, 'error', { message: err.message });
+        function createAndConnect() {
+          const connection = new TikTokLiveConnection(username, {
+            processInitialData: false,
+            enableExtendedGiftInfo: true
           });
 
-        connection.on(WebcastEvent.CHAT, (data) => {
-          broadcast(ws, 'chat', {
-            user: data.user?.uniqueId || 'unknown',
-            nickname: data.user?.nickname || '',
-            comment: data.comment || '',
-            profilePictureUrl: data.user?.profilePictureUrl || ''
+          /* Store connection + metadata for this client */
+          clients.set(ws, { connection, username, reconnectTimer: null });
+
+          connection.connect()
+            .then((state) => {
+              console.log(`Connected to ${username} (roomId ${state.roomId})`);
+              reconnectDelay = 5000; /* reset backoff on success */
+              broadcast(ws, 'connected', { username, roomId: state.roomId });
+            })
+            .catch((err) => {
+              console.error('Connection failed:', err.message);
+              broadcast(ws, 'error', { message: err.message });
+              /* Auto-retry after failure unless user disconnected */
+              scheduleReconnect();
+            });
+
+          connection.on(WebcastEvent.CHAT, (data) => {
+            broadcast(ws, 'chat', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              comment: data.comment || '',
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
           });
-        });
 
-        connection.on(WebcastEvent.GIFT, (data) => {
-          broadcast(ws, 'gift', {
-            user: data.user?.uniqueId || 'unknown',
-            nickname: data.user?.nickname || '',
-            giftId: data.giftId,
-            giftName: data.giftName || data.extendedGiftInfo?.name || `Gift #${data.giftId}`,
-            giftPictureUrl: data.giftPictureUrl || data.extendedGiftInfo?.image?.url_list?.[0] || '',
-            diamondCount: data.diamondCount || data.extendedGiftInfo?.diamond_count || 0,
-            repeatCount: data.repeatCount || 1,
-            profilePictureUrl: data.user?.profilePictureUrl || ''
+          connection.on(WebcastEvent.GIFT, (data) => {
+            broadcast(ws, 'gift', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              giftId: data.giftId,
+              giftName: data.giftName || data.extendedGiftInfo?.name || `Gift #${data.giftId}`,
+              giftPictureUrl: data.giftPictureUrl || data.extendedGiftInfo?.image?.url_list?.[0] || '',
+              diamondCount: data.diamondCount || data.extendedGiftInfo?.diamond_count || 0,
+              repeatCount: data.repeatCount || 1,
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
           });
-        });
 
-        connection.on(WebcastEvent.LIKE, (data) => {
-          broadcast(ws, 'like', {
-            user: data.user?.uniqueId || 'unknown',
-            nickname: data.user?.nickname || '',
-            likeCount: data.likeCount || 1,
-            profilePictureUrl: data.user?.profilePictureUrl || ''
+          connection.on(WebcastEvent.LIKE, (data) => {
+            broadcast(ws, 'like', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              likeCount: data.likeCount || 1,
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
           });
-        });
 
-        connection.on(WebcastEvent.FOLLOW, (data) => {
-          broadcast(ws, 'follow', {
-            user: data.user?.uniqueId || 'unknown',
-            nickname: data.user?.nickname || '',
-            profilePictureUrl: data.user?.profilePictureUrl || ''
+          connection.on(WebcastEvent.FOLLOW, (data) => {
+            broadcast(ws, 'follow', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
           });
-        });
 
-        connection.on(WebcastEvent.MEMBER, (data) => {
-          broadcast(ws, 'member', {
-            user: data.user?.uniqueId || 'unknown',
-            nickname: data.user?.nickname || '',
-            profilePictureUrl: data.user?.profilePictureUrl || ''
+          connection.on(WebcastEvent.MEMBER, (data) => {
+            broadcast(ws, 'member', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
           });
-        });
 
-        connection.on('disconnected', () => {
-          broadcast(ws, 'disconnected', { message: 'TikTok stream disconnected' });
-          clients.delete(ws);
-        });
+          /* Server-side auto-reconnect: keep connection alive */
+          connection.on('disconnected', () => {
+            console.log(`TikTok disconnected for ${username}, will auto-reconnect server-side`);
+            broadcast(ws, 'tiktok_reconnecting', { message: 'Stream interrupted, reconnecting…' });
+            scheduleReconnect();
+          });
 
-        connection.on('error', (err) => {
-          broadcast(ws, 'error', { message: err.message || 'Unknown error' });
-        });
+          connection.on('error', (err) => {
+            console.error(`TikTok error for ${username}:`, err.message);
+          });
+        }
+
+        let reconnectDelay = 5000;
+        const MAX_DELAY = 60000;
+
+        function scheduleReconnect() {
+          const entry = clients.get(ws);
+          if (!entry) return; /* user disconnected */
+          if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+
+          console.log(`Scheduling TikTok reconnect for ${username} in ${reconnectDelay / 1000}s`);
+          entry.reconnectTimer = setTimeout(() => {
+            if (!clients.has(ws)) return;
+            console.log(`Reconnecting TikTok for ${username}…`);
+            try { entry.connection.disconnect(); } catch {}
+            reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_DELAY);
+            createAndConnect();
+          }, reconnectDelay);
+        }
+
+        createAndConnect();
+
       }).catch((err) => {
         broadcast(ws, 'error', { message: 'Failed to load TikTok connector: ' + err.message });
       });
     }
 
     if (msg.type === 'disconnect') {
-      const conn = clients.get(ws);
-      if (conn) {
-        conn.disconnect();
+      const entry = clients.get(ws);
+      if (entry) {
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+        try { entry.connection.disconnect(); } catch {}
         clients.delete(ws);
         broadcast(ws, 'disconnected', { message: 'Disconnected by user' });
       }
@@ -196,9 +219,10 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    const conn = clients.get(ws);
-    if (conn) {
-      conn.disconnect();
+    const entry = clients.get(ws);
+    if (entry) {
+      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+      try { entry.connection.disconnect(); } catch {}
       clients.delete(ws);
     }
     console.log('Client disconnected');

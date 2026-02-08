@@ -45,7 +45,7 @@
   let ws = null;
   let ttsQueue = [];
   let isSpeaking = false;
-  let ttsEnabled = false;
+  let ttsEnabled = true;
   let userDisconnected = false;
   let currentUsername = '';
   let currentAudio = null;
@@ -226,15 +226,16 @@
         setStatus('online');
         break;
       case 'disconnected':
-        if (!userDisconnected && currentUsername) {
-          appendSystem('Stream disconnected. Reconnecting…');
-          if (ws) { ws.close(); ws = null; }
-        }
+        /* User-initiated disconnect — go offline */
+        setStatus('offline');
+        break;
+      case 'tiktok_reconnecting':
+        /* Server is auto-reconnecting TikTok — just show status, don't touch WS */
+        setStatus('reconnecting');
+        appendSystem(msg.message || 'Reconnecting to stream…');
         break;
       case 'error':
-        if (userDisconnected || !currentUsername) {
-          appendSystem(`Error: ${msg.message}`);
-        }
+        appendSystem(`Error: ${msg.message}`);
         break;
       case 'chat':
         if (toggleChat.checked) {
