@@ -277,24 +277,25 @@ html, body {
   gap: 8px;
 }
 
-.btn-row {
-  display: flex;
-  gap: 6px;
-}
-
-.btn-row button {
-  flex: 1;
-  padding: 8px;
-  font-size: 1.1rem;
+/* TTS Toggle button */
+.btn-tts-toggle {
+  padding: 10px 16px;
   border: none;
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .15s, color .15s;
+  border: 2px solid var(--border);
 }
 
-.btn-row button:hover { background: var(--border); }
+.btn-tts-toggle.active {
+  background: var(--success);
+  color: #000;
+  border-color: var(--success);
+}
 
 .slider-label, .select-label, .toggle-label {
   display: flex;

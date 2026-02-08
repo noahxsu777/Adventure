@@ -17,9 +17,7 @@
   const toggleLike      = $('#toggleLike');
   const toggleFollow    = $('#toggleFollow');
 
-  const ttsPlayBtn      = $('#ttsPlayBtn');
-  const ttsPauseBtn     = $('#ttsPauseBtn');
-  const ttsStopBtn      = $('#ttsStopBtn');
+  const ttsToggleBtn    = $('#ttsToggleBtn');
   const volumeSlider    = $('#volumeSlider');
   const speedSlider     = $('#speedSlider');
   const speedValue      = $('#speedValue');
@@ -45,11 +43,14 @@
   let ws = null;
   let ttsQueue = [];
   let isSpeaking = false;
-  let isPaused = false;
+  let ttsEnabled = false;
+  let userDisconnected = false;     // true only when user clicks Disconnect
+  let currentUsername = '';
   const MAX_CHAT_ITEMS = 300;
   const seenIds = new Set();
+  const RECONNECT_DELAY = 3000;
 
-  /* Gift gallery: { giftId: { name, imageUrl, diamonds, count, soundId } } */
+  /* Gift gallery: { giftId: { name, imageUrl, diamonds, count } } */
   const giftRegistry = {};
 
   /* Gift sound assignments: { giftId: soundId } */
@@ -106,7 +107,9 @@
     ALERT_SOUNDS.forEach(s => {
       const div = document.createElement('div');
       div.className = 'sound-item';
-      div.innerHTML = `<span>${s.name}</span>`;
+      const span = document.createElement('span');
+      span.textContent = s.name;
+      div.appendChild(span);
       const btn = document.createElement('button');
       btn.textContent = '▶ Play';
       btn.addEventListener('click', () => playAlertSound(s.id));
@@ -123,8 +126,25 @@
     seVoiceGroup.classList.toggle('hidden', !isSE);
   });
 
-  /* ---------- WebSocket ---------- */
+  /* ---------- TTS Toggle ---------- */
+  ttsToggleBtn.addEventListener('click', () => {
+    ttsEnabled = !ttsEnabled;
+    ttsToggleBtn.classList.toggle('active', ttsEnabled);
+    ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
+    if (!ttsEnabled) {
+      /* Stop everything when disabled */
+      speechSynthesis.cancel();
+      ttsQueue.length = 0;
+      isSpeaking = false;
+      renderQueue();
+    }
+  });
+
+  /* ---------- WebSocket with auto-reconnect ---------- */
   function connectWs(username) {
+    currentUsername = username;
+    userDisconnected = false;
+
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}`);
 
@@ -140,17 +160,28 @@
     });
 
     ws.addEventListener('close', () => {
-      setStatus('offline');
+      if (!userDisconnected && currentUsername) {
+        setStatus('reconnecting');
+        setTimeout(() => {
+          if (!userDisconnected && currentUsername) {
+            connectWs(currentUsername);
+          }
+        }, RECONNECT_DELAY);
+      } else {
+        setStatus('offline');
+      }
     });
 
     ws.addEventListener('error', () => {
-      setStatus('offline');
+      /* close event will fire after error, triggering reconnect */
     });
   }
 
   function disconnectWs() {
+    userDisconnected = true;
+    currentUsername = '';
     if (ws) {
-      ws.send(JSON.stringify({ type: 'disconnect' }));
+      try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
       ws = null;
     }
@@ -158,10 +189,21 @@
   }
 
   function setStatus(s) {
-    statusBadge.textContent = s === 'online' ? 'Live' : s === 'connecting' ? 'Connecting…' : 'Offline';
-    statusBadge.className = s === 'online' ? 'badge badge-on' : 'badge badge-off';
-    connectBtn.classList.toggle('hidden', s === 'online' || s === 'connecting');
-    disconnectBtn.classList.toggle('hidden', s !== 'online' && s !== 'connecting');
+    if (s === 'online') {
+      statusBadge.textContent = 'Live';
+      statusBadge.className = 'badge badge-on';
+    } else if (s === 'connecting') {
+      statusBadge.textContent = 'Connecting…';
+      statusBadge.className = 'badge badge-off';
+    } else if (s === 'reconnecting') {
+      statusBadge.textContent = 'Reconnecting…';
+      statusBadge.className = 'badge badge-off';
+    } else {
+      statusBadge.textContent = 'Offline';
+      statusBadge.className = 'badge badge-off';
+    }
+    connectBtn.classList.toggle('hidden', s !== 'offline');
+    disconnectBtn.classList.toggle('hidden', s === 'offline');
   }
 
   /* ---------- Event handler ---------- */
@@ -171,11 +213,17 @@
         setStatus('online');
         break;
       case 'disconnected':
-        setStatus('offline');
+        /* Close the WS so the close handler triggers auto-reconnect */
+        if (!userDisconnected && currentUsername) {
+          appendSystem('Stream disconnected. Reconnecting…');
+          if (ws) { ws.close(); ws = null; }
+        }
         break;
       case 'error':
-        setStatus('offline');
-        appendSystem(`Error: ${msg.message}`);
+        /* Only show errors when not auto-reconnecting to avoid spam */
+        if (userDisconnected || !currentUsername) {
+          appendSystem(`Error: ${msg.message}`);
+        }
         break;
       case 'chat':
         if (toggleChat.checked) {
@@ -331,7 +379,7 @@
       const card = document.createElement('div');
       card.className = 'gift-card';
 
-      /* Gift image */
+      /* Gift image from TikTok */
       if (g.imageUrl) {
         const gImg = document.createElement('img');
         gImg.src = g.imageUrl;
@@ -429,6 +477,8 @@
   }
 
   function enqueueTTS(user, text, eventType) {
+    if (!ttsEnabled) return;
+
     const id = `${user}:${text}`;
     if (seenIds.has(id)) return;
     seenIds.add(id);
@@ -448,7 +498,7 @@
   }
 
   function processQueue() {
-    if (isSpeaking || isPaused || ttsQueue.length === 0) return;
+    if (!ttsEnabled || isSpeaking || ttsQueue.length === 0) return;
     isSpeaking = true;
 
     const next = ttsQueue.shift();
@@ -505,29 +555,7 @@
     }
   });
 
-  /* ---------- TTS controls ---------- */
-  ttsPlayBtn.addEventListener('click', () => {
-    isPaused = false;
-    if (speechSynthesis.paused) {
-      speechSynthesis.resume();
-    } else {
-      processQueue();
-    }
-  });
-
-  ttsPauseBtn.addEventListener('click', () => {
-    isPaused = true;
-    speechSynthesis.pause();
-  });
-
-  ttsStopBtn.addEventListener('click', () => {
-    isPaused = false;
-    isSpeaking = false;
-    ttsQueue.length = 0;
-    speechSynthesis.cancel();
-    renderQueue();
-  });
-
+  /* ---------- Other controls ---------- */
   speedSlider.addEventListener('input', () => {
     speedValue.textContent = `${parseFloat(speedSlider.value).toFixed(1)}×`;
   });
