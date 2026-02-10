@@ -266,6 +266,9 @@
       case 'connected':
         setStatus('online');
         break;
+      case 'available_gifts':
+        loadAvailableGifts(msg.gifts || []);
+        break;
       case 'disconnected':
         /* User-initiated disconnect — go offline */
         setStatus('offline');
@@ -456,10 +459,12 @@
         card.appendChild(diamDiv);
       }
 
-      const countDiv = document.createElement('div');
-      countDiv.className = 'gift-card-count';
-      countDiv.textContent = `Received: ${g.count}×`;
-      card.appendChild(countDiv);
+      if (g.count > 0) {
+        const countDiv = document.createElement('div');
+        countDiv.className = 'gift-card-count';
+        countDiv.textContent = `Received: ${g.count}×`;
+        card.appendChild(countDiv);
+      }
 
       const sel = document.createElement('select');
       sel.dataset.gid = gid;
@@ -496,6 +501,27 @@
 
       giftGalleryGrid.appendChild(card);
     });
+  }
+
+  /* Load all available TikTok gifts from the API into the gallery */
+  function loadAvailableGifts(gifts) {
+    gifts.forEach(g => {
+      const gid = g.giftId;
+      if (!gid) return;
+      if (!giftRegistry[gid]) {
+        giftRegistry[gid] = {
+          name: g.name || `Gift #${gid}`,
+          imageUrl: g.imageUrl || '',
+          diamonds: g.diamonds || 0,
+          count: 0
+        };
+      } else {
+        /* Update image/name if we didn't have it before */
+        if (!giftRegistry[gid].imageUrl && g.imageUrl) giftRegistry[gid].imageUrl = g.imageUrl;
+        if (giftRegistry[gid].name === `Gift #${gid}` && g.name) giftRegistry[gid].name = g.name;
+      }
+    });
+    renderGiftGallery();
   }
 
   /* ---------- Media Session API ---------- */
