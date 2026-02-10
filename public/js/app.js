@@ -24,6 +24,7 @@
   const voiceSelect     = $('#voiceSelect');
   const readUsernameToggle = $('#readUsernameToggle');
   const readGiftSenderToggle = $('#readGiftSenderToggle');
+  const readGiftsTTSToggle = $('#readGiftsTTSToggle');
 
   const ttsProvider     = $('#ttsProvider');
   const browserVoiceGroup = $('#browserVoiceGroup');
@@ -132,6 +133,16 @@
   /* Currently targeted gift ID for sound modal */
   let soundModalGiftId = null;
 
+  /* Track currently playing preview audio to stop it when a new one plays */
+  let currentPreviewAudio = null;
+  function stopPreview() {
+    if (currentPreviewAudio) {
+      currentPreviewAudio.pause();
+      currentPreviewAudio.currentTime = 0;
+      currentPreviewAudio = null;
+    }
+  }
+
   /* Pre-populate gallery from static catalog (loaded from gifts.js) */
   /* Name → key lookup for O(1) matching during live events */
   const giftNameIndex = {};
@@ -171,8 +182,11 @@
     if (soundId.startsWith('up:')) {
       const entry = uploadedSounds[soundId];
       if (!entry) return;
+      stopPreview();
       const audio = new Audio(entry.dataUrl);
       audio.volume = parseFloat(volumeSlider.value);
+      currentPreviewAudio = audio;
+      audio.addEventListener('ended', () => { if (currentPreviewAudio === audio) currentPreviewAudio = null; });
       audio.play().catch(() => {});
       return;
     }
@@ -181,8 +195,11 @@
     if (soundId.startsWith('mi:')) {
       const mp3Url = soundId.slice(3);
       const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(mp3Url)}`;
+      stopPreview();
       const audio = new Audio(proxyUrl);
       audio.volume = parseFloat(volumeSlider.value);
+      currentPreviewAudio = audio;
+      audio.addEventListener('ended', () => { if (currentPreviewAudio === audio) currentPreviewAudio = null; });
       audio.play().catch(() => {});
       return;
     }
@@ -243,7 +260,7 @@
           const playB = document.createElement('button');
           playB.className = 'sound-row-btn play';
           playB.textContent = '▶';
-          playB.addEventListener('click', (e) => { e.stopPropagation(); playAlertSound(k); });
+          playB.addEventListener('click', (e) => { e.stopPropagation(); stopPreview(); playAlertSound(k); });
           row.appendChild(playB);
 
           if (soundModalGiftId) {
@@ -296,9 +313,12 @@
         playB.textContent = '▶';
         playB.addEventListener('click', (e) => {
           e.stopPropagation();
+          stopPreview();
           const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
           const audio = new Audio(proxyUrl);
           audio.volume = parseFloat(volumeSlider.value);
+          currentPreviewAudio = audio;
+          audio.addEventListener('ended', () => { if (currentPreviewAudio === audio) currentPreviewAudio = null; });
           audio.play().catch(() => {});
         });
         row.appendChild(playB);
@@ -354,6 +374,7 @@
   }
 
   function closeSoundModal() {
+    stopPreview();
     soundModal.classList.add('hidden');
     soundModalGiftId = null;
   }
@@ -575,7 +596,9 @@
         if (toggleGift.checked) {
           const giftText = `${msg.giftName} ×${msg.repeatCount}`;
           appendGiftMessage(msg.user, msg.giftName, msg.repeatCount, msg.diamondCount, msg.giftPictureUrl, msg.profilePictureUrl);
-          enqueueTTS(msg.user, giftText, 'gift');
+          if (readGiftsTTSToggle.checked) {
+            enqueueTTS(msg.user, giftText, 'gift');
+          }
           registerGift(msg.giftId, msg.giftName, msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);
         }
         break;
