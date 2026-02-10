@@ -121,7 +121,7 @@
     });
   }
 
-  /* ---------- Built-in alert sounds ---------- */
+  /* ---------- Built-in alert sounds (kept for backward compat with saved assignments) ---------- */
   const ALERT_SOUNDS = [
     { id: 'chime',     name: '🔔 Chime',      freq: 880,  type: 'sine',     dur: 0.4 },
     { id: 'ding',      name: '✨ Ding',       freq: 1200, type: 'sine',     dur: 0.25 },
@@ -132,6 +132,9 @@
     { id: 'alert',     name: '🚨 Alert',      freq: 500,  type: 'square',   dur: 0.6 },
     { id: 'bell',      name: '🔕 Bell',       freq: 1500, type: 'sine',     dur: 0.3 },
   ];
+
+  /* Cached popular sounds for gift card dropdowns */
+  let cachedPopularSounds = [];
 
   let audioCtx = null;
   function getAudioCtx() {
@@ -210,25 +213,6 @@
   function renderSoundLibrary() {
     soundLibrary.innerHTML = '';
 
-    /* Built-in sounds section */
-    const builtinTitle = document.createElement('div');
-    builtinTitle.className = 'sound-section-title';
-    builtinTitle.textContent = '🎵 Built-in Sounds';
-    soundLibrary.appendChild(builtinTitle);
-
-    ALERT_SOUNDS.forEach(s => {
-      const div = document.createElement('div');
-      div.className = 'sound-item';
-      const span = document.createElement('span');
-      span.textContent = s.name;
-      div.appendChild(span);
-      const btn = document.createElement('button');
-      btn.textContent = '▶ Play';
-      btn.addEventListener('click', () => playAlertSound(s.id));
-      div.appendChild(btn);
-      soundLibrary.appendChild(div);
-    });
-
     /* Popular sounds section (auto-loaded) */
     const popTitle = document.createElement('div');
     popTitle.className = 'sound-section-title';
@@ -250,7 +234,13 @@
       popularDiv.innerHTML = '<div class="mi-loading">Loading popular sounds…</div>';
       fetch('/api/sounds/popular')
         .then(r => r.json())
-        .then(data => renderSoundItems(popularDiv, Array.isArray(data) ? data : []))
+        .then(data => {
+          const sounds = Array.isArray(data) ? data : [];
+          cachedPopularSounds = sounds;
+          renderSoundItems(popularDiv, sounds);
+          /* Re-render gift gallery so dropdowns include popular sounds */
+          renderGiftGallery(giftSearch ? giftSearch.value : '');
+        })
         .catch(() => {
           popularDiv.innerHTML = '';
           const msg = document.createElement('div');
@@ -607,6 +597,7 @@
     }
 
     giftGalleryGrid.innerHTML = '';
+    const popularKeys = new Set(cachedPopularSounds.map(s => 'mi:' + s.mp3));
     ids.forEach(gid => {
       const g = giftRegistry[gid];
       const card = document.createElement('div');
@@ -652,31 +643,48 @@
       noOpt.textContent = 'No sound';
       sel.appendChild(noOpt);
 
-      /* Add built-in sounds group */
-      const builtinGroup = document.createElement('optgroup');
-      builtinGroup.label = '🎵 Built-in';
-      ALERT_SOUNDS.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.name;
-        if (giftSounds[gid] === s.id) opt.selected = true;
-        builtinGroup.appendChild(opt);
-      });
-      sel.appendChild(builtinGroup);
-
-      /* If a MyInstants sound is assigned, show it as option */
+      /* Add popular sounds group (from MyInstants) */
       const currentSound = giftSounds[gid];
-      if (currentSound && currentSound.startsWith('mi:')) {
+      if (cachedPopularSounds.length > 0) {
+        const popGroup = document.createElement('optgroup');
+        popGroup.label = '🔥 Popular';
+        cachedPopularSounds.forEach(s => {
+          const opt = document.createElement('option');
+          const soundKey = 'mi:' + s.mp3;
+          opt.value = soundKey;
+          opt.textContent = s.title;
+          if (currentSound === soundKey) opt.selected = true;
+          popGroup.appendChild(opt);
+        });
+        sel.appendChild(popGroup);
+      }
+
+      /* If a MyInstants sound is assigned that's not in popular, show it as option */
+      if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
         const miGroup = document.createElement('optgroup');
         miGroup.label = '🌐 MyInstants';
         const miOpt = document.createElement('option');
         miOpt.value = currentSound;
-        /* Extract name from localStorage or URL */
         const savedName = localStorage.getItem('miName:' + currentSound) || 'Custom sound';
         miOpt.textContent = `🔊 ${savedName}`;
         miOpt.selected = true;
         miGroup.appendChild(miOpt);
         sel.appendChild(miGroup);
+      }
+
+      /* Backward compat: if a built-in oscillator sound is assigned, show it */
+      if (currentSound && !currentSound.startsWith('mi:')) {
+        const legacyGroup = document.createElement('optgroup');
+        legacyGroup.label = '🎵 Legacy';
+        const ls = ALERT_SOUNDS.find(a => a.id === currentSound);
+        if (ls) {
+          const opt = document.createElement('option');
+          opt.value = ls.id;
+          opt.textContent = ls.name;
+          opt.selected = true;
+          legacyGroup.appendChild(opt);
+          sel.appendChild(legacyGroup);
+        }
       }
 
       card.appendChild(sel);
