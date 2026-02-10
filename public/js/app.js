@@ -41,6 +41,7 @@
   const queueList       = $('#queueList');
 
   const giftGalleryGrid = $('#giftGalleryGrid');
+  const giftSearch      = $('#giftSearch');
   const soundLibrary    = $('#soundLibrary');
 
   /* ---------- State ---------- */
@@ -170,6 +171,11 @@
   }
   renderSoundLibrary();
   renderGiftGallery();
+
+  /* Gift search filter */
+  giftSearch.addEventListener('input', () => {
+    renderGiftGallery(giftSearch.value);
+  });
 
   /* ---------- TTS Provider switching ---------- */
   ttsProvider.addEventListener('change', () => {
@@ -438,13 +444,19 @@
       playAlertSound(assignedSound);
     }
 
-    renderGiftGallery();
+    renderGiftGallery(giftSearch.value);
   }
 
-  function renderGiftGallery() {
-    const ids = Object.keys(giftRegistry);
+  function renderGiftGallery(filter) {
+    const term = (filter || '').toLowerCase();
+    const ids = Object.keys(giftRegistry).filter(gid => {
+      if (!term) return true;
+      return giftRegistry[gid].name.toLowerCase().includes(term);
+    });
     if (ids.length === 0) {
-      giftGalleryGrid.innerHTML = '<div class="gift-empty">No gifts available.</div>';
+      giftGalleryGrid.innerHTML = term
+        ? '<div class="gift-empty">No gifts match your search.</div>'
+        : '<div class="gift-empty">No gifts available.</div>';
       return;
     }
 
