@@ -148,39 +148,6 @@ wss.on('connection', (ws) => {
               console.log(`Connected to ${username} (roomId ${state.roomId})`);
               reconnectDelay = 5000; /* reset backoff on success */
               broadcast(ws, 'connected', { username, roomId: state.roomId });
-
-              /* Send cached available gifts (already fetched during connect when enableExtendedGiftInfo=true) */
-              try {
-                const cached = connection.availableGifts;
-                if (cached) {
-                  const giftList = Object.values(cached).map(g => ({
-                    giftId: g.id || g.gift_id,
-                    name: g.name || 'Unknown',
-                    imageUrl: g.image?.url_list?.[0] || g.icon?.url_list?.[0] || '',
-                    diamonds: g.diamond_count || g.diamondCount || 0
-                  }));
-                  console.log(`Sending ${giftList.length} cached gifts for ${username}`);
-                  broadcast(ws, 'available_gifts', { gifts: giftList });
-                }
-              } catch (err) {
-                console.warn('Failed to read cached gifts:', err.message);
-              }
-
-              /* Also try fetching the full gift list */
-              connection.fetchAvailableGifts()
-                .then((gifts) => {
-                  const giftList = (gifts || []).map(g => ({
-                    giftId: g.id || g.gift_id,
-                    name: g.name || 'Unknown',
-                    imageUrl: g.image?.url_list?.[0] || g.icon?.url_list?.[0] || '',
-                    diamonds: g.diamond_count || g.diamondCount || 0
-                  }));
-                  console.log(`Fetched ${giftList.length} available gifts for ${username}`);
-                  broadcast(ws, 'available_gifts', { gifts: giftList });
-                })
-                .catch((err) => {
-                  console.warn('Failed to fetch available gifts:', err.message);
-                });
             })
             .catch((err) => {
               console.error('Connection failed:', err.message);
