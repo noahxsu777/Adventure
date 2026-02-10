@@ -589,14 +589,9 @@ html, body {
 .sound-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* MyInstants search in Sound Library */
-.mi-search-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
 .mi-search-input {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -604,21 +599,10 @@ html, body {
   color: var(--text);
   font-size: 0.85rem;
   outline: none;
+  margin-bottom: 8px;
 }
 
 .mi-search-input:focus { border-color: var(--accent); }
-
-.mi-search-btn {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 0.82rem;
-  cursor: pointer;
-  flex-shrink: 0;
-}
 
 .mi-results {
   display: flex;

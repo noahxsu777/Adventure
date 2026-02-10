@@ -248,7 +248,7 @@
           msg.textContent = 'Could not load popular sounds. ';
           const retry = document.createElement('button');
           retry.textContent = 'Retry';
-          retry.className = 'mi-search-btn';
+          retry.style.cssText = 'margin-left:6px;padding:4px 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:0.82rem';
           retry.addEventListener('click', loadPopular);
           msg.appendChild(retry);
           popularDiv.appendChild(msg);
@@ -256,54 +256,38 @@
     }
     loadPopular();
 
-    /* MyInstants search section */
-    const miTitle = document.createElement('div');
-    miTitle.className = 'sound-section-title';
-    miTitle.textContent = '🔍 Search Sounds';
-    soundLibrary.appendChild(miTitle);
-
-    const miDesc = document.createElement('div');
-    miDesc.className = 'sound-section-desc';
-    miDesc.textContent = 'Search thousands of sound effects from myinstants.com';
-    soundLibrary.appendChild(miDesc);
-
-    const searchRow = document.createElement('div');
-    searchRow.className = 'mi-search-row';
+    /* MyInstants live search */
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
-    searchInput.placeholder = '🔍 Search sounds (e.g. airhorn, bruh, wow)…';
+    searchInput.placeholder = '🔍 Search sounds…';
     searchInput.className = 'mi-search-input';
-    searchRow.appendChild(searchInput);
-    const searchBtn = document.createElement('button');
-    searchBtn.textContent = 'Search';
-    searchBtn.className = 'mi-search-btn';
-    searchRow.appendChild(searchBtn);
-    soundLibrary.appendChild(searchRow);
+    soundLibrary.appendChild(searchInput);
 
     const resultsDiv = document.createElement('div');
     resultsDiv.id = 'miResults';
     resultsDiv.className = 'mi-results';
     soundLibrary.appendChild(resultsDiv);
 
-    async function doSearch() {
+    let searchTimeout = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
       const q = searchInput.value.trim();
-      if (!q) return;
-      resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
-      try {
-        const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
-        const data = await resp.json();
-        if (data.error) {
-          resultsDiv.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
-        } else {
-          renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+      if (!q) { resultsDiv.innerHTML = ''; return; }
+      searchTimeout = setTimeout(async () => {
+        resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
+        try {
+          const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
+          const data = await resp.json();
+          if (data.error) {
+            resultsDiv.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
+          } else {
+            renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+          }
+        } catch {
+          resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
         }
-      } catch {
-        resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
-      }
-    }
-
-    searchBtn.addEventListener('click', doSearch);
-    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+      }, 400);
+    });
   }
   renderSoundLibrary();
   renderGiftGallery();
