@@ -557,9 +557,28 @@
     audio.volume = parseFloat(volumeSlider.value);
     audio.playbackRate = parseFloat(speedSlider.value);
     updateMediaSession(text || 'Reading message…');
-    audio.onended = () => { currentAudio = null; isSpeaking = false; processQueue(); };
-    audio.onerror = () => { currentAudio = null; isSpeaking = false; processQueue(); };
-    audio.play().catch(() => { currentAudio = null; isSpeaking = false; processQueue(); });
+
+    /* Timeout protection: skip if audio doesn't finish in 30s */
+    const timeout = setTimeout(() => {
+      if (currentAudio === audio) {
+        audio.pause();
+        audio.removeAttribute('src');
+        currentAudio = null;
+        isSpeaking = false;
+        processQueue();
+      }
+    }, 30000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (currentAudio === audio) currentAudio = null;
+      isSpeaking = false;
+      processQueue();
+    };
+
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    audio.play().catch(cleanup);
   }
 
   function speakStreamElements(text) {
@@ -631,8 +650,16 @@
     if (voices[idx]) utter.voice = voices[idx];
 
     updateMediaSession(next);
-    utter.onend = () => { isSpeaking = false; processQueue(); };
-    utter.onerror = () => { isSpeaking = false; processQueue(); };
+
+    /* Timeout protection for browser TTS (30s max) */
+    const timeout = setTimeout(() => {
+      speechSynthesis.cancel();
+      isSpeaking = false;
+      processQueue();
+    }, 30000);
+
+    utter.onend = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
+    utter.onerror = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
 
     speechSynthesis.speak(utter);
   }
@@ -714,6 +741,32 @@
       speechSynthesis.resume();
     }
   }, 10000);
+
+  /* ---------- TTS Watchdog: recover from stuck isSpeaking ---------- */
+  let stuckCount = 0;
+  setInterval(() => {
+    if (!ttsEnabled || !isSpeaking) {
+      stuckCount = 0;
+      return;
+    }
+    /* Check if audio is actually playing */
+    const audioActive = currentAudio && !currentAudio.paused && !currentAudio.ended;
+    const synthActive = speechSynthesis.speaking;
+    if (audioActive || synthActive) {
+      stuckCount = 0;
+      return;
+    }
+    /* isSpeaking is true but nothing is actually playing */
+    stuckCount++;
+    if (stuckCount >= 2) {
+      console.warn('TTS watchdog: forcing recovery from stuck state');
+      speechSynthesis.cancel();
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      isSpeaking = false;
+      stuckCount = 0;
+      processQueue();
+    }
+  }, 5000);
 
   /* Keep Service Worker alive with periodic pings */
   setInterval(() => {
