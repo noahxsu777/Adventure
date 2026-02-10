@@ -44,6 +44,13 @@
   const giftSearch      = $('#giftSearch');
   const soundLibrary    = $('#soundLibrary');
 
+  /* Sound Browser Modal */
+  const soundModal        = $('#soundModal');
+  const soundModalClose   = $('#soundModalClose');
+  const soundModalSearch  = $('#soundModalSearch');
+  const soundModalResults = $('#soundModalResults');
+  const soundUploadInput  = $('#soundUploadInput');
+
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
@@ -97,7 +104,8 @@
   /* Gift sound assignments: { key: soundId }
      soundId can be:
        - built-in oscillator id like 'chime', 'ding'
-       - MyInstants URL prefixed with 'mi:' like 'mi:https://www.myinstants.com/media/sounds/...' */
+       - MyInstants URL prefixed with 'mi:' like 'mi:https://www.myinstants.com/media/sounds/...'
+       - Uploaded sound prefixed with 'up:' like 'up:filename.mp3' */
   const giftSounds = {};
 
   /* Load saved gift sound assignments from localStorage */
@@ -109,6 +117,19 @@
   function saveGiftSounds() {
     try { localStorage.setItem('giftSounds', JSON.stringify(giftSounds)); } catch {}
   }
+
+  /* Uploaded sounds: { 'up:filename.mp3': { name, dataUrl } } */
+  const uploadedSounds = {};
+  try {
+    const saved = localStorage.getItem('uploadedSounds');
+    if (saved) Object.assign(uploadedSounds, JSON.parse(saved));
+  } catch {}
+  function saveUploadedSounds() {
+    try { localStorage.setItem('uploadedSounds', JSON.stringify(uploadedSounds)); } catch {}
+  }
+
+  /* Currently targeted gift ID for sound modal */
+  let soundModalGiftId = null;
 
   /* Pre-populate gallery from static catalog (loaded from gifts.js) */
   /* Name → key lookup for O(1) matching during live events */
@@ -144,6 +165,16 @@
 
   function playAlertSound(soundId) {
     if (!soundId) return;
+
+    /* Uploaded sound (data URL prefixed with 'up:') */
+    if (soundId.startsWith('up:')) {
+      const entry = uploadedSounds[soundId];
+      if (!entry) return;
+      const audio = new Audio(entry.dataUrl);
+      audio.volume = parseFloat(volumeSlider.value);
+      audio.play().catch(() => {});
+      return;
+    }
 
     /* MyInstants sound (URL prefixed with 'mi:') */
     if (soundId.startsWith('mi:')) {
@@ -182,132 +213,224 @@
     });
   });
 
-  /* ---------- Sound Library UI ---------- */
+  /* ---------- Sound Browser Modal ---------- */
 
-  /** Render a list of MyInstants-style sound items into a container */
-  function renderSoundItems(container, sounds) {
+  function renderModalSounds(container, sounds, searchQuery) {
     container.innerHTML = '';
-    if (!sounds || sounds.length === 0) {
-      container.innerHTML = '<div class="mi-loading">No sounds found.</div>';
-      return;
-    }
-    sounds.forEach(s => {
-      const item = document.createElement('div');
-      item.className = 'sound-item mi-sound-item';
-      const title = document.createElement('span');
-      title.textContent = s.title;
-      item.appendChild(title);
-      const playBtn = document.createElement('button');
-      playBtn.textContent = '▶';
-      playBtn.addEventListener('click', () => {
-        const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
-        const audio = new Audio(proxyUrl);
-        audio.volume = parseFloat(volumeSlider.value);
-        audio.play().catch(() => {});
-      });
-      item.appendChild(playBtn);
-      container.appendChild(item);
-    });
-  }
 
-  function renderSoundLibrary() {
-    soundLibrary.innerHTML = '';
+    /* Uploaded sounds section (always shown) */
+    const uploadKeys = Object.keys(uploadedSounds);
+    if (uploadKeys.length > 0) {
+      const sec = document.createElement('div');
+      sec.className = 'sound-modal-section';
+      sec.textContent = '📁 My Uploads';
+      container.appendChild(sec);
 
-    /* Popular sounds section (auto-loaded) */
-    const popTitle = document.createElement('div');
-    popTitle.className = 'sound-section-title';
-    popTitle.textContent = '🔥 Popular Sounds';
-    soundLibrary.appendChild(popTitle);
+      const lowerQ = searchQuery ? searchQuery.toLowerCase() : '';
+      uploadKeys
+        .filter(k => !searchQuery || uploadedSounds[k].name.toLowerCase().includes(lowerQ))
+        .forEach(k => {
+          const entry = uploadedSounds[k];
+          const row = document.createElement('div');
+          row.className = 'sound-row sound-upload-item';
 
-    const popDesc = document.createElement('div');
-    popDesc.className = 'sound-section-desc';
-    popDesc.textContent = 'Most popular sound effects from MyInstants';
-    soundLibrary.appendChild(popDesc);
+          const name = document.createElement('span');
+          name.className = 'sound-row-name';
+          name.textContent = entry.name;
+          row.appendChild(name);
 
-    const popularDiv = document.createElement('div');
-    popularDiv.className = 'mi-results';
-    popularDiv.innerHTML = '<div class="mi-loading">Loading popular sounds…</div>';
-    soundLibrary.appendChild(popularDiv);
+          const playB = document.createElement('button');
+          playB.className = 'sound-row-btn play';
+          playB.textContent = '▶';
+          playB.addEventListener('click', (e) => { e.stopPropagation(); playAlertSound(k); });
+          row.appendChild(playB);
 
-    /* Load popular sounds automatically */
-    function loadPopular() {
-      popularDiv.innerHTML = '<div class="mi-loading">Loading popular sounds…</div>';
-      fetch('/api/sounds/popular')
-        .then(r => r.json())
-        .then(data => {
-          const sounds = Array.isArray(data) ? data : [];
-          cachedPopularSounds = sounds;
-          renderSoundItems(popularDiv, sounds);
-          /* Re-render gift gallery so dropdowns include popular sounds */
-          renderGiftGallery(giftSearch ? giftSearch.value : '');
-        })
-        .catch(() => {
-          popularDiv.innerHTML = '';
-          const msg = document.createElement('div');
-          msg.className = 'mi-loading';
-          msg.textContent = 'Could not load popular sounds. ';
-          const retry = document.createElement('button');
-          retry.textContent = 'Retry';
-          retry.style.cssText = 'margin-left:6px;padding:4px 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:0.82rem';
-          retry.addEventListener('click', loadPopular);
-          msg.appendChild(retry);
-          popularDiv.appendChild(msg);
+          if (soundModalGiftId) {
+            const useB = document.createElement('button');
+            useB.className = 'sound-row-btn use';
+            useB.textContent = '✓ Use';
+            useB.addEventListener('click', (e) => {
+              e.stopPropagation();
+              giftSounds[soundModalGiftId] = k;
+              saveGiftSounds();
+              closeSoundModal();
+              renderGiftGallery(giftSearch.value);
+            });
+            row.appendChild(useB);
+          }
+
+          const delB = document.createElement('button');
+          delB.className = 'sound-row-btn del';
+          delB.textContent = '✕';
+          delB.addEventListener('click', (e) => {
+            e.stopPropagation();
+            delete uploadedSounds[k];
+            saveUploadedSounds();
+            renderModalSounds(container, sounds, searchQuery);
+          });
+          row.appendChild(delB);
+
+          container.appendChild(row);
         });
     }
-    loadPopular();
 
-    /* MyInstants live search */
-    const searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.placeholder = '🔍 Search sounds…';
-    searchInput.className = 'mi-search-input';
-    soundLibrary.appendChild(searchInput);
+    /* Popular / search results */
+    if (sounds && sounds.length > 0) {
+      const sec = document.createElement('div');
+      sec.className = 'sound-modal-section';
+      sec.textContent = searchQuery ? '🔍 Search Results' : '🔥 Popular Sounds';
+      container.appendChild(sec);
 
-    const resultsDiv = document.createElement('div');
-    resultsDiv.id = 'miResults';
-    resultsDiv.className = 'mi-results';
-    soundLibrary.appendChild(resultsDiv);
+      sounds.forEach(s => {
+        const row = document.createElement('div');
+        row.className = 'sound-row';
 
-    let searchTimeout = null;
-    searchInput.addEventListener('input', () => {
-      clearTimeout(searchTimeout);
-      const q = searchInput.value.trim();
-      if (!q) { resultsDiv.innerHTML = ''; return; }
+        const name = document.createElement('span');
+        name.className = 'sound-row-name';
+        name.textContent = s.title;
+        row.appendChild(name);
 
-      /* Immediately show local matches from Popular Sounds (instant feedback) */
-      const localMatches = cachedPopularSounds.filter(s =>
-        s.title.toLowerCase().includes(q.toLowerCase())
-      );
-      if (localMatches.length > 0) renderSoundItems(resultsDiv, localMatches);
-      else resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
+        const playB = document.createElement('button');
+        playB.className = 'sound-row-btn play';
+        playB.textContent = '▶';
+        playB.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
+          const audio = new Audio(proxyUrl);
+          audio.volume = parseFloat(volumeSlider.value);
+          audio.play().catch(() => {});
+        });
+        row.appendChild(playB);
 
-      /* Also try server-side search for more results */
-      searchTimeout = setTimeout(async () => {
-        try {
-          const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
-          const data = await resp.json();
-          if (data.error) {
-            /* Server search failed — keep local matches if any */
-            if (localMatches.length === 0) {
-              resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
-            }
-          } else {
-            const arr = Array.isArray(data) ? data : [];
-            if (arr.length > 0) {
-              renderSoundItems(resultsDiv, arr);
-            } else if (localMatches.length === 0) {
-              resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
-            }
-          }
-        } catch {
-          /* API unreachable — keep local matches */
-          if (localMatches.length === 0) {
-            resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
-          }
+        if (soundModalGiftId) {
+          const useB = document.createElement('button');
+          useB.className = 'sound-row-btn use';
+          useB.textContent = '✓ Use';
+          useB.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const soundKey = 'mi:' + s.mp3;
+            giftSounds[soundModalGiftId] = soundKey;
+            try { localStorage.setItem('miName:' + soundKey, s.title); } catch {}
+            saveGiftSounds();
+            closeSoundModal();
+            renderGiftGallery(giftSearch.value);
+          });
+          row.appendChild(useB);
         }
-      }, 400);
-    });
+
+        container.appendChild(row);
+      });
+    } else if (!uploadKeys.length) {
+      container.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+    }
   }
+
+  /* Shared helper: fetch popular sounds (used by modal and startup) */
+  function loadPopularSounds() {
+    return fetch('/api/sounds/popular')
+      .then(r => r.json())
+      .then(data => {
+        cachedPopularSounds = Array.isArray(data) ? data : [];
+        return cachedPopularSounds;
+      })
+      .catch(() => cachedPopularSounds);
+  }
+
+  function openSoundModal(giftId) {
+    soundModalGiftId = giftId || null;
+    soundModal.classList.remove('hidden');
+    soundModalSearch.value = '';
+    /* Show popular sounds by default */
+    if (cachedPopularSounds.length > 0) {
+      renderModalSounds(soundModalResults, cachedPopularSounds, '');
+    } else {
+      soundModalResults.innerHTML = '<div class="mi-loading">Loading sounds…</div>';
+      loadPopularSounds().then(sounds => {
+        renderModalSounds(soundModalResults, sounds, '');
+      });
+    }
+    soundModalSearch.focus();
+  }
+
+  function closeSoundModal() {
+    soundModal.classList.add('hidden');
+    soundModalGiftId = null;
+  }
+
+  soundModalClose.addEventListener('click', closeSoundModal);
+  soundModal.addEventListener('click', (e) => {
+    if (e.target === soundModal) closeSoundModal();
+  });
+
+  /* Search within modal */
+  let modalSearchTimeout = null;
+  soundModalSearch.addEventListener('input', () => {
+    clearTimeout(modalSearchTimeout);
+    const q = soundModalSearch.value.trim();
+
+    if (!q) {
+      renderModalSounds(soundModalResults, cachedPopularSounds, '');
+      return;
+    }
+
+    /* Immediate local filter */
+    const local = cachedPopularSounds.filter(s =>
+      s.title.toLowerCase().includes(q.toLowerCase())
+    );
+    renderModalSounds(soundModalResults, local, q);
+
+    /* Try server search for more */
+    modalSearchTimeout = setTimeout(async () => {
+      try {
+        const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        if (!data.error) {
+          const arr = Array.isArray(data) ? data : [];
+          if (arr.length > 0) renderModalSounds(soundModalResults, arr, q);
+        }
+      } catch { /* keep local */ }
+    }, 400);
+  });
+
+  /* Upload handler */
+  soundUploadInput.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('audio/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const key = 'up:' + Date.now() + '_' + file.name;
+        uploadedSounds[key] = { name: file.name, dataUrl: reader.result };
+        saveUploadedSounds();
+        /* Refresh modal if open */
+        if (!soundModal.classList.contains('hidden')) {
+          const q = soundModalSearch.value.trim();
+          const sounds = q
+            ? cachedPopularSounds.filter(s => s.title.toLowerCase().includes(q.toLowerCase()))
+            : cachedPopularSounds;
+          renderModalSounds(soundModalResults, sounds, q);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  });
+
+  /* Sound Library section in Gifts tab — just shows popular sounds */
+  function renderSoundLibrary() {
+    soundLibrary.innerHTML = '';
+    const openBtn = document.createElement('button');
+    openBtn.textContent = '🔊 Open Sound Browser';
+    openBtn.style.cssText = 'width:100%;padding:12px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px';
+    openBtn.addEventListener('click', () => openSoundModal(null));
+    soundLibrary.appendChild(openBtn);
+  }
+
+  /* Load popular sounds on startup */
+  loadPopularSounds();
+
   renderSoundLibrary();
   renderGiftGallery();
 
@@ -708,22 +831,6 @@
 
       card.appendChild(btnRow);
 
-      /* Sound search panel (hidden by default) */
-      const searchPanel = document.createElement('div');
-      searchPanel.className = 'gift-sound-search hidden';
-
-      const sInput = document.createElement('input');
-      sInput.type = 'text';
-      sInput.placeholder = 'Search MyInstants…';
-      sInput.className = 'mi-gift-search-input';
-      searchPanel.appendChild(sInput);
-
-      const sResults = document.createElement('div');
-      sResults.className = 'mi-gift-results';
-      searchPanel.appendChild(sResults);
-
-      card.appendChild(searchPanel);
-
       /* Event handlers */
       sel.addEventListener('change', () => {
         if (sel.value) {
@@ -740,86 +847,7 @@
       });
 
       searchSoundBtn.addEventListener('click', () => {
-        searchPanel.classList.toggle('hidden');
-        if (!searchPanel.classList.contains('hidden')) sInput.focus();
-      });
-
-      let searchTimeout = null;
-      sInput.addEventListener('input', () => {
-        clearTimeout(searchTimeout);
-        const q = sInput.value.trim();
-        if (!q) { sResults.innerHTML = ''; return; }
-
-        /* Immediately show local matches from Popular Sounds */
-        const localMatches = cachedPopularSounds.filter(s =>
-          s.title.toLowerCase().includes(q.toLowerCase())
-        );
-
-        function renderInlineResults(results) {
-          sResults.innerHTML = '';
-          if (!results || results.length === 0) {
-            sResults.innerHTML = '<div class="mi-loading">No results</div>';
-            return;
-          }
-          results.slice(0, 10).forEach(s => {
-              const row = document.createElement('div');
-              row.className = 'mi-result-row';
-
-              const name = document.createElement('span');
-              name.textContent = s.title;
-              name.className = 'mi-result-name';
-              row.appendChild(name);
-
-              const playB = document.createElement('button');
-              playB.textContent = '▶';
-              playB.className = 'mi-result-play';
-              playB.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
-                const audio = new Audio(proxyUrl);
-                audio.volume = parseFloat(volumeSlider.value);
-                audio.play().catch(() => {});
-              });
-              row.appendChild(playB);
-
-              const useB = document.createElement('button');
-              useB.textContent = '✓ Use';
-              useB.className = 'mi-result-use';
-              useB.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const soundKey = 'mi:' + s.mp3;
-                giftSounds[gid] = soundKey;
-                try { localStorage.setItem('miName:' + soundKey, s.title); } catch {}
-                saveGiftSounds();
-                searchPanel.classList.add('hidden');
-                /* Re-render just this card's selector */
-                renderGiftGallery(giftSearch.value);
-              });
-              row.appendChild(useB);
-
-              sResults.appendChild(row);
-            });
-        }
-
-        /* Show local results immediately, then try server */
-        if (localMatches.length > 0) {
-          renderInlineResults(localMatches);
-        } else {
-          sResults.innerHTML = '<div class="mi-loading">Searching…</div>';
-        }
-
-        searchTimeout = setTimeout(async () => {
-          try {
-            const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
-            const data = await resp.json();
-            if (!data.error) {
-              const arr = Array.isArray(data) ? data : [];
-              if (arr.length > 0) renderInlineResults(arr);
-            }
-          } catch {
-            /* Server failed — keep local matches */
-          }
-        }, 400);
+        openSoundModal(gid);
       });
 
       giftGalleryGrid.appendChild(card);
