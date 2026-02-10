@@ -23,6 +23,7 @@
   const speedValue      = $('#speedValue');
   const voiceSelect     = $('#voiceSelect');
   const readUsernameToggle = $('#readUsernameToggle');
+  const readGiftSenderToggle = $('#readGiftSenderToggle');
 
   const ttsProvider     = $('#ttsProvider');
   const browserVoiceGroup = $('#browserVoiceGroup');
@@ -511,6 +512,12 @@
     userDisconnected = true;
     currentUsername = '';
     reconnectAttempts = 0;
+    /* Stop all TTS on disconnect */
+    speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    ttsQueue.length = 0;
+    isSpeaking = false;
+    renderQueue();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -566,9 +573,9 @@
         break;
       case 'gift':
         if (toggleGift.checked) {
-          const text = `sent ${msg.giftName} ×${msg.repeatCount}`;
+          const giftText = `${msg.giftName} ×${msg.repeatCount}`;
           appendGiftMessage(msg.user, msg.giftName, msg.repeatCount, msg.diamondCount, msg.giftPictureUrl, msg.profilePictureUrl);
-          enqueueTTS(msg.user, text, 'gift');
+          enqueueTTS(msg.user, giftText, 'gift');
           registerGift(msg.giftId, msg.giftName, msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);
         }
         break;
@@ -973,7 +980,7 @@
     speakViaAudio(url, text);
   }
 
-  function enqueueTTS(user, text) {
+  function enqueueTTS(user, text, eventType = 'chat') {
     if (!ttsEnabled) return;
 
     const id = `${user}:${text}`;
@@ -988,7 +995,12 @@
       if (kw.length && !kw.some(k => text.toLowerCase().includes(k))) return;
     }
 
-    const label = readUsernameToggle.checked ? `${user} says: ${text}` : text;
+    let label;
+    if (eventType === 'gift') {
+      label = readGiftSenderToggle.checked ? `${user} envió ${text}` : text;
+    } else {
+      label = readUsernameToggle.checked ? `${user} says: ${text}` : text;
+    }
     ttsQueue.push(label);
     renderQueue();
     processQueue();
