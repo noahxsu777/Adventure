@@ -164,7 +164,7 @@
     const val = ttsProvider.value;
     browserVoiceGroup.classList.toggle('hidden', val !== 'browser');
     seVoiceGroup.classList.toggle('hidden', val !== 'streamelements');
-    gttsLangGroup.classList.toggle('hidden', val !== 'googletranslate');
+    gttsLangGroup.classList.toggle('hidden', val !== 'google');
     tiktokVoiceGroup.classList.toggle('hidden', val !== 'tiktok');
   });
 
@@ -613,7 +613,7 @@
       speakStreamElements(next);
       return;
     }
-    if (provider === 'googletranslate') {
+    if (provider === 'google') {
       speakGoogleTranslate(next);
       return;
     }
@@ -659,7 +659,7 @@
       audio.playbackRate = parseFloat(speedSlider.value);
       updateMediaSession(testText);
       audio.play().catch(() => {});
-    } else if (provider === 'googletranslate') {
+    } else if (provider === 'google') {
       const lang = gttsLangSelect.value;
       const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(testText)}`;
       const audio = new Audio(url);
@@ -707,9 +707,9 @@
 
   disconnectBtn.addEventListener('click', disconnectWs);
 
-  /* ---------- Keep TTS alive in background ---------- */
+  /* ---------- Keep browser TTS alive in background ---------- */
   setInterval(() => {
-    if (speechSynthesis.speaking && !speechSynthesis.paused) {
+    if (ttsProvider.value === 'browser' && speechSynthesis.speaking && !speechSynthesis.paused) {
       speechSynthesis.pause();
       speechSynthesis.resume();
     }

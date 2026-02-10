@@ -71,8 +71,8 @@
         <label class="select-label">
           Provider
           <select id="ttsProvider">
-            <option value="streamelements" selected>🎙️ StreamElements</option>
-            <option value="googletranslate">🌐 Google Translate</option>
+            <option value="google" selected>🌐 Google</option>
+            <option value="streamelements">🎙️ StreamElements</option>
             <option value="tiktok">🎵 TikTok Voice</option>
             <option value="browser">🖥️ Browser Voices</option>
           </select>
@@ -83,7 +83,7 @@
           <select id="voiceSelect"></select>
         </label>
 
-        <label class="select-label" id="seVoiceGroup">
+        <label class="select-label hidden" id="seVoiceGroup">
           Voice
           <select id="seVoiceSelect">
             <option value="Brian">Brian</option>
@@ -144,7 +144,7 @@
           </select>
         </label>
 
-        <label class="select-label hidden" id="gttsLangGroup">
+        <label class="select-label" id="gttsLangGroup">
           Language
           <select id="gttsLangSelect">
             <option value="en">English</option>
