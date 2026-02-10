@@ -90,11 +90,22 @@
     }
   });
 
-  /* Gift gallery: { giftId: { name, imageUrl, diamonds, count } } */
+  /* Gift gallery: { key: { name, imageUrl, diamonds, count } } */
   const giftRegistry = {};
 
-  /* Gift sound assignments: { giftId: soundId } */
+  /* Gift sound assignments: { key: soundId } */
   const giftSounds = {};
+
+  /* Pre-populate gallery from static catalog (loaded from gifts.js) */
+  /* Name → key lookup for O(1) matching during live events */
+  const giftNameIndex = {};
+  if (typeof TIKTOK_GIFT_CATALOG !== 'undefined') {
+    TIKTOK_GIFT_CATALOG.forEach((g, i) => {
+      const key = 'catalog_' + i;
+      giftRegistry[key] = { name: g.name, imageUrl: g.image, diamonds: 0, count: 0 };
+      giftNameIndex[g.name.toLowerCase()] = key;
+    });
+  }
 
   /* ---------- Built-in alert sounds ---------- */
   const ALERT_SOUNDS = [
@@ -158,6 +169,7 @@
     });
   }
   renderSoundLibrary();
+  renderGiftGallery();
 
   /* ---------- TTS Provider switching ---------- */
   ttsProvider.addEventListener('change', () => {
@@ -403,14 +415,25 @@
 
   /* ---------- Gift Gallery ---------- */
   function registerGift(giftId, name, imageUrl, diamonds, count) {
-    if (!giftId) return;
-    if (giftRegistry[giftId]) {
-      giftRegistry[giftId].count += (count || 1);
-    } else {
-      giftRegistry[giftId] = { name, imageUrl, diamonds, count: count || 1 };
+    if (!giftId && !name) return;
+
+    /* O(1) lookup by name into the catalog */
+    let key = giftId ? String(giftId) : null;
+    const catalogKey = name ? giftNameIndex[name.toLowerCase()] : undefined;
+
+    if (catalogKey) {
+      /* Update the catalog entry with live data */
+      giftRegistry[catalogKey].count += (count || 1);
+      if (imageUrl) giftRegistry[catalogKey].imageUrl = imageUrl;
+      if (diamonds) giftRegistry[catalogKey].diamonds = diamonds;
+      key = catalogKey;
+    } else if (key && giftRegistry[key]) {
+      giftRegistry[key].count += (count || 1);
+    } else if (key) {
+      giftRegistry[key] = { name, imageUrl, diamonds, count: count || 1 };
     }
 
-    const assignedSound = giftSounds[giftId];
+    const assignedSound = giftSounds[key];
     if (assignedSound) {
       playAlertSound(assignedSound);
     }
@@ -421,7 +444,7 @@
   function renderGiftGallery() {
     const ids = Object.keys(giftRegistry);
     if (ids.length === 0) {
-      giftGalleryGrid.innerHTML = '<div class="gift-empty">Connect to a live stream to see gifts here.</div>';
+      giftGalleryGrid.innerHTML = '<div class="gift-empty">No gifts available.</div>';
       return;
     }
 
