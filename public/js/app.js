@@ -273,18 +273,37 @@
       clearTimeout(searchTimeout);
       const q = searchInput.value.trim();
       if (!q) { resultsDiv.innerHTML = ''; return; }
+
+      /* Immediately show local matches from Popular Sounds (instant feedback) */
+      const localMatches = cachedPopularSounds.filter(s =>
+        s.title.toLowerCase().includes(q.toLowerCase())
+      );
+      if (localMatches.length > 0) renderSoundItems(resultsDiv, localMatches);
+      else resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
+
+      /* Also try server-side search for more results */
       searchTimeout = setTimeout(async () => {
-        resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
         try {
           const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
           const data = await resp.json();
           if (data.error) {
-            resultsDiv.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
+            /* Server search failed — keep local matches if any */
+            if (localMatches.length === 0) {
+              resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+            }
           } else {
-            renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+            const arr = Array.isArray(data) ? data : [];
+            if (arr.length > 0) {
+              renderSoundItems(resultsDiv, arr);
+            } else if (localMatches.length === 0) {
+              resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+            }
           }
         } catch {
-          resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
+          /* API unreachable — keep local matches */
+          if (localMatches.length === 0) {
+            resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+          }
         }
       }, 400);
     });
@@ -728,23 +747,21 @@
       let searchTimeout = null;
       sInput.addEventListener('input', () => {
         clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(async () => {
-          const q = sInput.value.trim();
-          if (!q) { sResults.innerHTML = ''; return; }
-          sResults.innerHTML = '<div class="mi-loading">Searching…</div>';
-          try {
-            const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
-            const data = await resp.json();
-            sResults.innerHTML = '';
-            if (data.error) {
-              sResults.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
-              return;
-            }
-            if (!Array.isArray(data) || data.length === 0) {
-              sResults.innerHTML = '<div class="mi-loading">No results</div>';
-              return;
-            }
-            data.slice(0, 10).forEach(s => {
+        const q = sInput.value.trim();
+        if (!q) { sResults.innerHTML = ''; return; }
+
+        /* Immediately show local matches from Popular Sounds */
+        const localMatches = cachedPopularSounds.filter(s =>
+          s.title.toLowerCase().includes(q.toLowerCase())
+        );
+
+        function renderInlineResults(results) {
+          sResults.innerHTML = '';
+          if (!results || results.length === 0) {
+            sResults.innerHTML = '<div class="mi-loading">No results</div>';
+            return;
+          }
+          results.slice(0, 10).forEach(s => {
               const row = document.createElement('div');
               row.className = 'mi-result-row';
 
@@ -782,8 +799,25 @@
 
               sResults.appendChild(row);
             });
+        }
+
+        /* Show local results immediately, then try server */
+        if (localMatches.length > 0) {
+          renderInlineResults(localMatches);
+        } else {
+          sResults.innerHTML = '<div class="mi-loading">Searching…</div>';
+        }
+
+        searchTimeout = setTimeout(async () => {
+          try {
+            const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
+            const data = await resp.json();
+            if (!data.error) {
+              const arr = Array.isArray(data) ? data : [];
+              if (arr.length > 0) renderInlineResults(arr);
+            }
           } catch {
-            sResults.innerHTML = '<div class="mi-loading">Search failed</div>';
+            /* Server failed — keep local matches */
           }
         }, 400);
       });

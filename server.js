@@ -104,8 +104,9 @@ const MI_SITE = 'https://www.myinstants.com';
 
 /** Map Vercel API response items to { title, mp3 } */
 function mapMiResults(json) {
-  if (!Array.isArray(json)) return [];
-  return json.map(s => ({ title: s.title || s.name || '', mp3: s.mp3 || '' })).filter(s => s.mp3);
+  /* The Vercel API returns { status, data: [...] }, extract the array */
+  const arr = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
+  return arr.map(s => ({ title: s.title || s.name || '', mp3: s.mp3 || '' })).filter(s => s.mp3);
 }
 
 /**
@@ -127,8 +128,8 @@ async function scrapeMyInstants(path) {
   /* Parse sounds from HTML — MyInstants uses <div class="instant"> with onclick and title */
   const sounds = [];
   const TITLE_SEARCH_WINDOW = 500;
-  /* Pattern: onclick="play('URL')" in button, title from <a> inside the same container */
-  const playPattern = /onclick\s*=\s*"play\s*\(\s*'([^']+\.mp3[^']*)'\s*\)"/g;
+  /* Pattern: onclick/onmousedown with play('/media/sounds/file.mp3', ...) — capture the sound path */
+  const playPattern = /(?:onclick|onmousedown)\s*=\s*"play\s*\(\s*'(\/media\/sounds\/[^']+)'/g;
   let match;
   while ((match = playPattern.exec(html)) !== null) {
     let mp3 = match[1];
@@ -164,8 +165,8 @@ async function searchMyInstants(query) {
     console.log('Vercel API failed, falling back to direct scraping:', e.message);
   }
 
-  /* Fallback: scrape myinstants.com directly */
-  return scrapeMyInstants(`/en/search/?name=${encodeURIComponent(query)}`);
+  /* Fallback: scrape myinstants.com directly — use + for spaces like the site expects */
+  return scrapeMyInstants(`/en/search/?name=${encodeURIComponent(query).replace(/%20/g, '+')}`);
 }
 
 app.get('/api/sounds/search', async (req, res) => {
