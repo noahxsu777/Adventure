@@ -96,61 +96,50 @@ app.get('/api/tiktok-tts', async (req, res) => {
 });
 
 /* ============================================================
-   MyInstants Sound Effects — search & proxy
+   MyInstants Sound Effects — search & proxy via REST API
    ============================================================ */
 
+const MI_API = 'https://myinstants-api.vercel.app';
+
+/** Map MyInstants API response items to { title, mp3 } */
+function mapMiResults(json) {
+  if (!Array.isArray(json)) return [];
+  return json.map(s => ({ title: s.title || s.name || '', mp3: s.mp3 || '' })).filter(s => s.mp3);
+}
+
 /**
- * Scrape MyInstants search results.
- * Returns [{ title, slug, mp3 }]
+ * Search sounds via MyInstants REST API.
+ * Returns [{ title, mp3 }]
  */
-async function searchMyInstants(query, page = 1) {
-  const url = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}&page=${page}`;
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  });
-  if (!resp.ok) throw new Error(`MyInstants ${resp.status}`);
-  const html = await resp.text();
-
-  const results = [];
-  /* Match each instant button: <button class="small-button" ... onclick="play('media/sounds/filename.mp3'...)">
-     and its title from <a> tags nearby */
-  const buttonRegex = /onclick="play\('\/media\/sounds\/([^']+)'/g;
-  const titleRegex = /<a[^>]+class="instant-link"[^>]*>([^<]+)<\/a>/g;
-
-  const buttons = [];
-  let m;
-  while ((m = buttonRegex.exec(html)) !== null) {
-    buttons.push(m[1]);
-  }
-
-  const titles = [];
-  while ((m = titleRegex.exec(html)) !== null) {
-    titles.push(m[1].trim());
-  }
-
-  if (buttons.length !== titles.length) {
-    console.warn(`MyInstants scrape mismatch: ${buttons.length} buttons vs ${titles.length} titles`);
-  }
-
-  for (let i = 0; i < buttons.length && i < titles.length; i++) {
-    results.push({
-      title: titles[i],
-      mp3: `https://www.myinstants.com/media/sounds/${buttons[i]}`
-    });
-  }
-
-  return results;
+async function searchMyInstants(query) {
+  const url = `${MI_API}/search?q=${encodeURIComponent(query)}`;
+  const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!resp.ok) throw new Error(`MyInstants API ${resp.status}`);
+  return mapMiResults(await resp.json());
 }
 
 app.get('/api/sounds/search', async (req, res) => {
-  const { q, page } = req.query;
+  const { q } = req.query;
   if (!q || q.length < 1) return res.json([]);
   try {
-    const results = await searchMyInstants(q, parseInt(page) || 1);
+    const results = await searchMyInstants(q);
     res.json(results);
   } catch (err) {
     console.error('MyInstants search error:', err.message);
     res.status(502).json({ error: 'Sound search failed: ' + err.message });
+  }
+});
+
+/* Popular / trending sounds — pre-populated list */
+app.get('/api/sounds/popular', async (_req, res) => {
+  try {
+    const resp = await fetch(`${MI_API}/best`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!resp.ok) throw new Error(`MyInstants API ${resp.status}`);
+    const results = mapMiResults(await resp.json());
+    res.json(results);
+  } catch (err) {
+    console.error('MyInstants popular error:', err.message);
+    res.status(502).json({ error: 'Failed to load popular sounds: ' + err.message });
   }
 });
 

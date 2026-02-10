@@ -180,6 +180,33 @@
   });
 
   /* ---------- Sound Library UI ---------- */
+
+  /** Render a list of MyInstants-style sound items into a container */
+  function renderSoundItems(container, sounds) {
+    container.innerHTML = '';
+    if (!sounds || sounds.length === 0) {
+      container.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+      return;
+    }
+    sounds.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'sound-item mi-sound-item';
+      const title = document.createElement('span');
+      title.textContent = s.title;
+      item.appendChild(title);
+      const playBtn = document.createElement('button');
+      playBtn.textContent = '▶';
+      playBtn.addEventListener('click', () => {
+        const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
+        const audio = new Audio(proxyUrl);
+        audio.volume = parseFloat(volumeSlider.value);
+        audio.play().catch(() => {});
+      });
+      item.appendChild(playBtn);
+      container.appendChild(item);
+    });
+  }
+
   function renderSoundLibrary() {
     soundLibrary.innerHTML = '';
 
@@ -202,10 +229,47 @@
       soundLibrary.appendChild(div);
     });
 
+    /* Popular sounds section (auto-loaded) */
+    const popTitle = document.createElement('div');
+    popTitle.className = 'sound-section-title';
+    popTitle.textContent = '🔥 Popular Sounds';
+    soundLibrary.appendChild(popTitle);
+
+    const popDesc = document.createElement('div');
+    popDesc.className = 'sound-section-desc';
+    popDesc.textContent = 'Most popular sound effects from MyInstants';
+    soundLibrary.appendChild(popDesc);
+
+    const popularDiv = document.createElement('div');
+    popularDiv.className = 'mi-results';
+    popularDiv.innerHTML = '<div class="mi-loading">Loading popular sounds…</div>';
+    soundLibrary.appendChild(popularDiv);
+
+    /* Load popular sounds automatically */
+    function loadPopular() {
+      popularDiv.innerHTML = '<div class="mi-loading">Loading popular sounds…</div>';
+      fetch('/api/sounds/popular')
+        .then(r => r.json())
+        .then(data => renderSoundItems(popularDiv, Array.isArray(data) ? data : []))
+        .catch(() => {
+          popularDiv.innerHTML = '';
+          const msg = document.createElement('div');
+          msg.className = 'mi-loading';
+          msg.textContent = 'Could not load popular sounds. ';
+          const retry = document.createElement('button');
+          retry.textContent = 'Retry';
+          retry.className = 'mi-search-btn';
+          retry.addEventListener('click', loadPopular);
+          msg.appendChild(retry);
+          popularDiv.appendChild(msg);
+        });
+    }
+    loadPopular();
+
     /* MyInstants search section */
     const miTitle = document.createElement('div');
     miTitle.className = 'sound-section-title';
-    miTitle.textContent = '🌐 MyInstants Sound Effects';
+    miTitle.textContent = '🔍 Search Sounds';
     soundLibrary.appendChild(miTitle);
 
     const miDesc = document.createElement('div');
@@ -238,29 +302,8 @@
       try {
         const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
         const data = await resp.json();
-        resultsDiv.innerHTML = '';
-        if (data.length === 0) {
-          resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
-          return;
-        }
-        data.forEach(s => {
-          const item = document.createElement('div');
-          item.className = 'sound-item mi-sound-item';
-          const title = document.createElement('span');
-          title.textContent = s.title;
-          item.appendChild(title);
-          const playBtn = document.createElement('button');
-          playBtn.textContent = '▶';
-          playBtn.addEventListener('click', () => {
-            const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
-            const audio = new Audio(proxyUrl);
-            audio.volume = parseFloat(volumeSlider.value);
-            audio.play().catch(() => {});
-          });
-          item.appendChild(playBtn);
-          resultsDiv.appendChild(item);
-        });
-      } catch (err) {
+        renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+      } catch {
         resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
       }
     }
