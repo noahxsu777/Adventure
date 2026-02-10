@@ -95,6 +95,97 @@ app.get('/api/tiktok-tts', async (req, res) => {
   }
 });
 
+/* ============================================================
+   MyInstants Sound Effects — search & proxy
+   ============================================================ */
+
+/**
+ * Scrape MyInstants search results.
+ * Returns [{ title, slug, mp3 }]
+ */
+async function searchMyInstants(query, page = 1) {
+  const url = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}&page=${page}`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+  });
+  if (!resp.ok) throw new Error(`MyInstants ${resp.status}`);
+  const html = await resp.text();
+
+  const results = [];
+  /* Match each instant button: <button class="small-button" ... onclick="play('media/sounds/filename.mp3'...)">
+     and its title from <a> tags nearby */
+  const buttonRegex = /onclick="play\('\/media\/sounds\/([^']+)'/g;
+  const titleRegex = /<a[^>]+class="instant-link"[^>]*>([^<]+)<\/a>/g;
+
+  const buttons = [];
+  let m;
+  while ((m = buttonRegex.exec(html)) !== null) {
+    buttons.push(m[1]);
+  }
+
+  const titles = [];
+  while ((m = titleRegex.exec(html)) !== null) {
+    titles.push(m[1].trim());
+  }
+
+  if (buttons.length !== titles.length) {
+    console.warn(`MyInstants scrape mismatch: ${buttons.length} buttons vs ${titles.length} titles`);
+  }
+
+  for (let i = 0; i < buttons.length && i < titles.length; i++) {
+    results.push({
+      title: titles[i],
+      mp3: `https://www.myinstants.com/media/sounds/${buttons[i]}`
+    });
+  }
+
+  return results;
+}
+
+app.get('/api/sounds/search', async (req, res) => {
+  const { q, page } = req.query;
+  if (!q || q.length < 1) return res.json([]);
+  try {
+    const results = await searchMyInstants(q, parseInt(page) || 1);
+    res.json(results);
+  } catch (err) {
+    console.error('MyInstants search error:', err.message);
+    res.status(502).json({ error: 'Sound search failed: ' + err.message });
+  }
+});
+
+/* Proxy MyInstants MP3 to avoid CORS */
+app.get('/api/sounds/play', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).send('Missing url');
+
+  /* Only allow myinstants.com URLs */
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'www.myinstants.com' && parsed.hostname !== 'myinstants.com') {
+      return res.status(403).send('Only myinstants.com URLs allowed');
+    }
+    if (!parsed.pathname.startsWith('/media/sounds/')) {
+      return res.status(403).send('Invalid sound path');
+    }
+  } catch {
+    return res.status(400).send('Invalid URL');
+  }
+
+  try {
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (!resp.ok) throw new Error(`MP3 fetch ${resp.status}`);
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    const buffer = await resp.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    res.status(502).send('Sound proxy error: ' + err.message);
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 /** Track active TikTok connections per WebSocket client */

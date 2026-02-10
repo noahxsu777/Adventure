@@ -94,8 +94,21 @@
   /* Gift gallery: { key: { name, imageUrl, diamonds, count } } */
   const giftRegistry = {};
 
-  /* Gift sound assignments: { key: soundId } */
+  /* Gift sound assignments: { key: soundId }
+     soundId can be:
+       - built-in oscillator id like 'chime', 'ding'
+       - MyInstants URL prefixed with 'mi:' like 'mi:https://www.myinstants.com/media/sounds/...' */
   const giftSounds = {};
+
+  /* Load saved gift sound assignments from localStorage */
+  try {
+    const saved = localStorage.getItem('giftSounds');
+    if (saved) Object.assign(giftSounds, JSON.parse(saved));
+  } catch (e) { console.warn('Failed to load saved gift sounds:', e); }
+
+  function saveGiftSounds() {
+    try { localStorage.setItem('giftSounds', JSON.stringify(giftSounds)); } catch {}
+  }
 
   /* Pre-populate gallery from static catalog (loaded from gifts.js) */
   /* Name → key lookup for O(1) matching during live events */
@@ -127,6 +140,19 @@
   }
 
   function playAlertSound(soundId) {
+    if (!soundId) return;
+
+    /* MyInstants sound (URL prefixed with 'mi:') */
+    if (soundId.startsWith('mi:')) {
+      const mp3Url = soundId.slice(3);
+      const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(mp3Url)}`;
+      const audio = new Audio(proxyUrl);
+      audio.volume = parseFloat(volumeSlider.value);
+      audio.play().catch(() => {});
+      return;
+    }
+
+    /* Built-in oscillator sound */
     const s = ALERT_SOUNDS.find(a => a.id === soundId);
     if (!s) return;
     const ctx = getAudioCtx();
@@ -156,6 +182,13 @@
   /* ---------- Sound Library UI ---------- */
   function renderSoundLibrary() {
     soundLibrary.innerHTML = '';
+
+    /* Built-in sounds section */
+    const builtinTitle = document.createElement('div');
+    builtinTitle.className = 'sound-section-title';
+    builtinTitle.textContent = '🎵 Built-in Sounds';
+    soundLibrary.appendChild(builtinTitle);
+
     ALERT_SOUNDS.forEach(s => {
       const div = document.createElement('div');
       div.className = 'sound-item';
@@ -168,6 +201,72 @@
       div.appendChild(btn);
       soundLibrary.appendChild(div);
     });
+
+    /* MyInstants search section */
+    const miTitle = document.createElement('div');
+    miTitle.className = 'sound-section-title';
+    miTitle.textContent = '🌐 MyInstants Sound Effects';
+    soundLibrary.appendChild(miTitle);
+
+    const miDesc = document.createElement('div');
+    miDesc.className = 'sound-section-desc';
+    miDesc.textContent = 'Search thousands of sound effects from myinstants.com';
+    soundLibrary.appendChild(miDesc);
+
+    const searchRow = document.createElement('div');
+    searchRow.className = 'mi-search-row';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '🔍 Search sounds (e.g. airhorn, bruh, wow)…';
+    searchInput.className = 'mi-search-input';
+    searchRow.appendChild(searchInput);
+    const searchBtn = document.createElement('button');
+    searchBtn.textContent = 'Search';
+    searchBtn.className = 'mi-search-btn';
+    searchRow.appendChild(searchBtn);
+    soundLibrary.appendChild(searchRow);
+
+    const resultsDiv = document.createElement('div');
+    resultsDiv.id = 'miResults';
+    resultsDiv.className = 'mi-results';
+    soundLibrary.appendChild(resultsDiv);
+
+    async function doSearch() {
+      const q = searchInput.value.trim();
+      if (!q) return;
+      resultsDiv.innerHTML = '<div class="mi-loading">Searching…</div>';
+      try {
+        const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        resultsDiv.innerHTML = '';
+        if (data.length === 0) {
+          resultsDiv.innerHTML = '<div class="mi-loading">No sounds found.</div>';
+          return;
+        }
+        data.forEach(s => {
+          const item = document.createElement('div');
+          item.className = 'sound-item mi-sound-item';
+          const title = document.createElement('span');
+          title.textContent = s.title;
+          item.appendChild(title);
+          const playBtn = document.createElement('button');
+          playBtn.textContent = '▶';
+          playBtn.addEventListener('click', () => {
+            const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
+            const audio = new Audio(proxyUrl);
+            audio.volume = parseFloat(volumeSlider.value);
+            audio.play().catch(() => {});
+          });
+          item.appendChild(playBtn);
+          resultsDiv.appendChild(item);
+        });
+      } catch (err) {
+        resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
+      }
+    }
+
+    searchBtn.addEventListener('click', doSearch);
+    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
   }
   renderSoundLibrary();
   renderGiftGallery();
@@ -498,37 +597,152 @@
         card.appendChild(countDiv);
       }
 
+      /* Sound assignment: built-in sounds dropdown */
       const sel = document.createElement('select');
       sel.dataset.gid = gid;
       const noOpt = document.createElement('option');
       noOpt.value = '';
       noOpt.textContent = 'No sound';
       sel.appendChild(noOpt);
+
+      /* Add built-in sounds group */
+      const builtinGroup = document.createElement('optgroup');
+      builtinGroup.label = '🎵 Built-in';
       ALERT_SOUNDS.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
         opt.textContent = s.name;
         if (giftSounds[gid] === s.id) opt.selected = true;
-        sel.appendChild(opt);
+        builtinGroup.appendChild(opt);
       });
+      sel.appendChild(builtinGroup);
+
+      /* If a MyInstants sound is assigned, show it as option */
+      const currentSound = giftSounds[gid];
+      if (currentSound && currentSound.startsWith('mi:')) {
+        const miGroup = document.createElement('optgroup');
+        miGroup.label = '🌐 MyInstants';
+        const miOpt = document.createElement('option');
+        miOpt.value = currentSound;
+        /* Extract name from localStorage or URL */
+        const savedName = localStorage.getItem('miName:' + currentSound) || 'Custom sound';
+        miOpt.textContent = `🔊 ${savedName}`;
+        miOpt.selected = true;
+        miGroup.appendChild(miOpt);
+        sel.appendChild(miGroup);
+      }
+
       card.appendChild(sel);
+
+      /* Button row: Test + Search MyInstants */
+      const btnRow = document.createElement('div');
+      btnRow.className = 'gift-btn-row';
 
       const testBtn = document.createElement('button');
       testBtn.className = 'btn-play-sound';
       testBtn.textContent = '▶ Test';
-      card.appendChild(testBtn);
+      btnRow.appendChild(testBtn);
 
+      const searchSoundBtn = document.createElement('button');
+      searchSoundBtn.className = 'btn-search-sound';
+      searchSoundBtn.textContent = '🔍 Sound';
+      btnRow.appendChild(searchSoundBtn);
+
+      card.appendChild(btnRow);
+
+      /* Sound search panel (hidden by default) */
+      const searchPanel = document.createElement('div');
+      searchPanel.className = 'gift-sound-search hidden';
+
+      const sInput = document.createElement('input');
+      sInput.type = 'text';
+      sInput.placeholder = 'Search MyInstants…';
+      sInput.className = 'mi-gift-search-input';
+      searchPanel.appendChild(sInput);
+
+      const sResults = document.createElement('div');
+      sResults.className = 'mi-gift-results';
+      searchPanel.appendChild(sResults);
+
+      card.appendChild(searchPanel);
+
+      /* Event handlers */
       sel.addEventListener('change', () => {
         if (sel.value) {
           giftSounds[gid] = sel.value;
         } else {
           delete giftSounds[gid];
         }
+        saveGiftSounds();
       });
 
       testBtn.addEventListener('click', () => {
         const sid = giftSounds[gid] || sel.value;
         if (sid) playAlertSound(sid);
+      });
+
+      searchSoundBtn.addEventListener('click', () => {
+        searchPanel.classList.toggle('hidden');
+        if (!searchPanel.classList.contains('hidden')) sInput.focus();
+      });
+
+      let searchTimeout = null;
+      sInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(async () => {
+          const q = sInput.value.trim();
+          if (!q) { sResults.innerHTML = ''; return; }
+          sResults.innerHTML = '<div class="mi-loading">Searching…</div>';
+          try {
+            const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
+            const data = await resp.json();
+            sResults.innerHTML = '';
+            if (data.length === 0) {
+              sResults.innerHTML = '<div class="mi-loading">No results</div>';
+              return;
+            }
+            data.slice(0, 10).forEach(s => {
+              const row = document.createElement('div');
+              row.className = 'mi-result-row';
+
+              const name = document.createElement('span');
+              name.textContent = s.title;
+              name.className = 'mi-result-name';
+              row.appendChild(name);
+
+              const playB = document.createElement('button');
+              playB.textContent = '▶';
+              playB.className = 'mi-result-play';
+              playB.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(s.mp3)}`;
+                const audio = new Audio(proxyUrl);
+                audio.volume = parseFloat(volumeSlider.value);
+                audio.play().catch(() => {});
+              });
+              row.appendChild(playB);
+
+              const useB = document.createElement('button');
+              useB.textContent = '✓ Use';
+              useB.className = 'mi-result-use';
+              useB.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const soundKey = 'mi:' + s.mp3;
+                giftSounds[gid] = soundKey;
+                try { localStorage.setItem('miName:' + soundKey, s.title); } catch {}
+                saveGiftSounds();
+                searchPanel.classList.add('hidden');
+                /* Re-render just this card's selector */
+                renderGiftGallery(giftSearch.value);
+              });
+              row.appendChild(useB);
+
+              sResults.appendChild(row);
+            });
+          } catch {
+            sResults.innerHTML = '<div class="mi-loading">Search failed</div>';
+          }
+        }, 400);
       });
 
       giftGalleryGrid.appendChild(card);
