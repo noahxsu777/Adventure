@@ -302,7 +302,11 @@
       try {
         const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
         const data = await resp.json();
-        renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+        if (data.error) {
+          resultsDiv.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
+        } else {
+          renderSoundItems(resultsDiv, Array.isArray(data) ? data : []);
+        }
       } catch {
         resultsDiv.innerHTML = '<div class="mi-loading">Search failed. Try again.</div>';
       }
@@ -740,7 +744,11 @@
             const resp = await fetch(`/api/sounds/search?q=${encodeURIComponent(q)}`);
             const data = await resp.json();
             sResults.innerHTML = '';
-            if (data.length === 0) {
+            if (data.error) {
+              sResults.innerHTML = `<div class="mi-loading">⚠️ ${data.error}</div>`;
+              return;
+            }
+            if (!Array.isArray(data) || data.length === 0) {
               sResults.innerHTML = '<div class="mi-loading">No results</div>';
               return;
             }

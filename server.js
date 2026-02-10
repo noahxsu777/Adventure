@@ -96,26 +96,76 @@ app.get('/api/tiktok-tts', async (req, res) => {
 });
 
 /* ============================================================
-   MyInstants Sound Effects — search & proxy via REST API
+   MyInstants Sound Effects — search via direct scraping + API fallback
    ============================================================ */
 
 const MI_API = 'https://myinstants-api.vercel.app';
+const MI_SITE = 'https://www.myinstants.com';
 
-/** Map MyInstants API response items to { title, mp3 } */
+/** Map Vercel API response items to { title, mp3 } */
 function mapMiResults(json) {
   if (!Array.isArray(json)) return [];
   return json.map(s => ({ title: s.title || s.name || '', mp3: s.mp3 || '' })).filter(s => s.mp3);
 }
 
 /**
- * Search sounds via MyInstants REST API.
+ * Scrape MyInstants.com HTML search page for sounds.
  * Returns [{ title, mp3 }]
  */
+async function scrapeMyInstants(path) {
+  const url = `${MI_SITE}${path}`;
+  const resp = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'en-US,en;q=0.9'
+    }
+  });
+  if (!resp.ok) throw new Error(`MyInstants site ${resp.status}`);
+  const html = await resp.text();
+
+  /* Parse sounds from HTML — MyInstants uses <div class="instant"> with onclick and title */
+  const sounds = [];
+  const TITLE_SEARCH_WINDOW = 500;
+  /* Pattern: onclick="play('URL')" in button, title from <a> inside the same container */
+  const playPattern = /onclick\s*=\s*"play\s*\(\s*'([^']+\.mp3[^']*)'\s*\)"/g;
+  let match;
+  while ((match = playPattern.exec(html)) !== null) {
+    let mp3 = match[1];
+    if (mp3.startsWith('/')) mp3 = MI_SITE + mp3;
+
+    /* Find title near this match — look for the closest <a class="instant-link"> before/after */
+    const before = html.substring(Math.max(0, match.index - TITLE_SEARCH_WINDOW), match.index + match[0].length + TITLE_SEARCH_WINDOW);
+    const titleMatch = before.match(/class="instant-link"[^>]*title="([^"]+)"/);
+    const titleMatch2 = before.match(/class="instant-link"[^>]*>([^<]+)</);
+    const title = titleMatch ? titleMatch[1] : (titleMatch2 ? titleMatch2[1].trim() : mp3.split('/').pop().replace('.mp3', ''));
+
+    sounds.push({ title, mp3 });
+  }
+  return sounds;
+}
+
+/**
+ * Search sounds: try Vercel API first, fallback to direct scraping.
+ */
 async function searchMyInstants(query) {
-  const url = `${MI_API}/search?q=${encodeURIComponent(query)}`;
-  const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!resp.ok) throw new Error(`MyInstants API ${resp.status}`);
-  return mapMiResults(await resp.json());
+  /* Try Vercel API first */
+  try {
+    const url = `${MI_API}/search?q=${encodeURIComponent(query)}`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (resp.ok) {
+      const results = mapMiResults(await resp.json());
+      if (results.length > 0) return results;
+    }
+  } catch (e) {
+    console.log('Vercel API failed, falling back to direct scraping:', e.message);
+  }
+
+  /* Fallback: scrape myinstants.com directly */
+  return scrapeMyInstants(`/en/search/?name=${encodeURIComponent(query)}`);
 }
 
 app.get('/api/sounds/search', async (req, res) => {
@@ -130,17 +180,76 @@ app.get('/api/sounds/search', async (req, res) => {
   }
 });
 
-/* Popular / trending sounds — pre-populated list */
+/* Built-in popular sounds catalog — always available, no API needed */
+const POPULAR_SOUNDS = [
+  { title: 'Airhorn', mp3: 'https://www.myinstants.com/media/sounds/air-horn-club-sample_1.mp3' },
+  { title: 'Bruh', mp3: 'https://www.myinstants.com/media/sounds/movie_1.mp3' },
+  { title: 'Sad Violin', mp3: 'https://www.myinstants.com/media/sounds/sad-violin_1.mp3' },
+  { title: 'Wow', mp3: 'https://www.myinstants.com/media/sounds/anime-wow-sound-effect.mp3' },
+  { title: 'Fail', mp3: 'https://www.myinstants.com/media/sounds/the-price-is-right-losing-horn.mp3' },
+  { title: 'Drum Roll', mp3: 'https://www.myinstants.com/media/sounds/drum-roll-sound-effect.mp3' },
+  { title: 'Rimshot', mp3: 'https://www.myinstants.com/media/sounds/rimshot.mp3' },
+  { title: 'Ta Da!', mp3: 'https://www.myinstants.com/media/sounds/tada.mp3' },
+  { title: 'Applause', mp3: 'https://www.myinstants.com/media/sounds/small-crowd-applause.mp3' },
+  { title: 'Crickets', mp3: 'https://www.myinstants.com/media/sounds/crickets.mp3' },
+  { title: 'Suspense', mp3: 'https://www.myinstants.com/media/sounds/dun-dun-dun.mp3' },
+  { title: 'Wilhelm Scream', mp3: 'https://www.myinstants.com/media/sounds/wilhelmscream.mp3' },
+  { title: 'Cash Register', mp3: 'https://www.myinstants.com/media/sounds/cash-register-sound.mp3' },
+  { title: 'Wrong Answer', mp3: 'https://www.myinstants.com/media/sounds/wrong-answer-sound-effect.mp3' },
+  { title: 'Victory', mp3: 'https://www.myinstants.com/media/sounds/ff-victory.mp3' },
+  { title: 'Game Over', mp3: 'https://www.myinstants.com/media/sounds/pacman_death.mp3' },
+  { title: 'Mario Coin', mp3: 'https://www.myinstants.com/media/sounds/coin.mp3' },
+  { title: 'Mario 1-Up', mp3: 'https://www.myinstants.com/media/sounds/1-up.mp3' },
+  { title: 'Vine Boom', mp3: 'https://www.myinstants.com/media/sounds/vine-boom.mp3' },
+  { title: 'Oof', mp3: 'https://www.myinstants.com/media/sounds/roblox-death-sound_1.mp3' },
+  { title: 'Bonk', mp3: 'https://www.myinstants.com/media/sounds/bonk.mp3' },
+  { title: 'Nope', mp3: 'https://www.myinstants.com/media/sounds/nope.mp3' },
+  { title: 'Hello There', mp3: 'https://www.myinstants.com/media/sounds/hello-there.mp3' },
+  { title: 'Wasted (GTA)', mp3: 'https://www.myinstants.com/media/sounds/gta-v-wasted.mp3' },
+  { title: 'Emotional Damage', mp3: 'https://www.myinstants.com/media/sounds/emotional-damage-meme.mp3' },
+  { title: 'FBI Open Up', mp3: 'https://www.myinstants.com/media/sounds/fbi-open-up_1.mp3' },
+  { title: 'To Be Continued', mp3: 'https://www.myinstants.com/media/sounds/to-be-continued.mp3' },
+  { title: 'Windows Error', mp3: 'https://www.myinstants.com/media/sounds/erro.mp3' },
+  { title: 'Windows XP Startup', mp3: 'https://www.myinstants.com/media/sounds/windowsxpstartup.mp3' },
+  { title: 'Metal Gear Alert', mp3: 'https://www.myinstants.com/media/sounds/metal-gear-solid-alert-sound.mp3' },
+  { title: 'Alarm', mp3: 'https://www.myinstants.com/media/sounds/alarm.mp3' },
+  { title: 'Ship Horn', mp3: 'https://www.myinstants.com/media/sounds/ship-horn.mp3' },
+  { title: 'Whistle', mp3: 'https://www.myinstants.com/media/sounds/referee-whistle-blow.mp3' },
+  { title: 'Doorbell', mp3: 'https://www.myinstants.com/media/sounds/doorbell_8.mp3' },
+  { title: 'Magic Spell', mp3: 'https://www.myinstants.com/media/sounds/magic-spell.mp3' },
+  { title: 'Level Up', mp3: 'https://www.myinstants.com/media/sounds/level-up-sound.mp3' },
+  { title: 'Explosion', mp3: 'https://www.myinstants.com/media/sounds/explosion_x.mp3' },
+  { title: 'Laugh Track', mp3: 'https://www.myinstants.com/media/sounds/sitcom-laughing.mp3' },
+  { title: 'Record Scratch', mp3: 'https://www.myinstants.com/media/sounds/record-scratch.mp3' },
+  { title: 'Boing', mp3: 'https://www.myinstants.com/media/sounds/boing_1.mp3' },
+];
+
+/* Popular / trending sounds — built-in catalog + API enrichment */
 app.get('/api/sounds/popular', async (_req, res) => {
+  /* Always return built-in catalog immediately */
+  let results = [...POPULAR_SOUNDS];
+
+  /* Try to also get trending from API (non-blocking, adds more variety) */
   try {
-    const resp = await fetch(`${MI_API}/best`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!resp.ok) throw new Error(`MyInstants API ${resp.status}`);
-    const results = mapMiResults(await resp.json());
-    res.json(results);
-  } catch (err) {
-    console.error('MyInstants popular error:', err.message);
-    res.status(502).json({ error: 'Failed to load popular sounds: ' + err.message });
+    const resp = await fetch(`${MI_API}/best`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (resp.ok) {
+      const apiResults = mapMiResults(await resp.json());
+      /* Add API results that aren't duplicates */
+      const existingTitles = new Set(results.map(s => s.title.toLowerCase()));
+      for (const s of apiResults) {
+        if (!existingTitles.has(s.title.toLowerCase())) {
+          results.push(s);
+        }
+      }
+    }
+  } catch {
+    /* API failed, that's fine — we have the built-in catalog */
   }
+
+  res.json(results);
 });
 
 /* Proxy MyInstants MP3 to avoid CORS */
