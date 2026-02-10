@@ -132,7 +132,7 @@ wss.on('connection', (ws) => {
         clients.delete(ws);
       }
 
-      import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent }) => {
+      import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent, UserOfflineError }) => {
 
         function createAndConnect() {
           const connection = new TikTokLiveConnection(username, {
@@ -149,8 +149,25 @@ wss.on('connection', (ws) => {
               reconnectDelay = 5000; /* reset backoff on success */
               broadcast(ws, 'connected', { username, roomId: state.roomId });
 
-              /* Fetch all available gifts and send to frontend */
-              connection.getAvailableGifts()
+              /* Send cached available gifts (already fetched during connect when enableExtendedGiftInfo=true) */
+              try {
+                const cached = connection.availableGifts;
+                if (cached) {
+                  const giftList = Object.values(cached).map(g => ({
+                    giftId: g.id || g.gift_id,
+                    name: g.name || 'Unknown',
+                    imageUrl: g.image?.url_list?.[0] || g.icon?.url_list?.[0] || '',
+                    diamonds: g.diamond_count || g.diamondCount || 0
+                  }));
+                  console.log(`Sending ${giftList.length} cached gifts for ${username}`);
+                  broadcast(ws, 'available_gifts', { gifts: giftList });
+                }
+              } catch (err) {
+                console.warn('Failed to read cached gifts:', err.message);
+              }
+
+              /* Also try fetching the full gift list */
+              connection.fetchAvailableGifts()
                 .then((gifts) => {
                   const giftList = (gifts || []).map(g => ({
                     giftId: g.id || g.gift_id,
@@ -167,7 +184,12 @@ wss.on('connection', (ws) => {
             })
             .catch((err) => {
               console.error('Connection failed:', err.message);
-              broadcast(ws, 'error', { message: err.message });
+              /* Translate known errors to Spanish */
+              let errorMsg = err.message;
+              if (UserOfflineError && err instanceof UserOfflineError) {
+                errorMsg = 'El usuario no está en LIVE :(';
+              }
+              broadcast(ws, 'error', { message: errorMsg });
               /* Auto-retry after failure unless user disconnected */
               scheduleReconnect();
             });
