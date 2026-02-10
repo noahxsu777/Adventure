@@ -175,6 +175,7 @@
     ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
     if (ttsEnabled) {
       requestWakeLock();
+      mediaSessionIdle();
     } else {
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -498,20 +499,9 @@
   }
 
   /* ---------- Media Session API ---------- */
-  function updateMediaSession(text) {
-    if (!('mediaSession' in navigator)) return;
-    if (!text) {
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
-      return;
-    }
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: text.length > 60 ? text.slice(0, 57) + '…' : text,
-      artist: 'TikTok Live TTS',
-      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
-    });
-    navigator.mediaSession.playbackState = 'playing';
 
+  /* Register action handlers once at startup */
+  if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => {
       if (currentAudio) currentAudio.pause();
       navigator.mediaSession.playbackState = 'paused';
@@ -534,6 +524,33 @@
       isSpeaking = false;
       processQueue();
     });
+  }
+
+  function updateMediaSession(text) {
+    if (!('mediaSession' in navigator)) return;
+    if (!text) {
+      /* TTS disabled — clear session completely */
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+      return;
+    }
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: text.length > 60 ? text.slice(0, 57) + '…' : text,
+      artist: 'TikTok Live TTS',
+      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+    });
+    navigator.mediaSession.playbackState = 'playing';
+  }
+
+  /* Show idle state in media session when queue drains */
+  function mediaSessionIdle() {
+    if (!('mediaSession' in navigator) || !ttsEnabled) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: 'Waiting for messages…',
+      artist: 'TikTok Live TTS',
+      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+    });
+    navigator.mediaSession.playbackState = 'playing';
   }
 
   /* ---------- TTS System ---------- */
@@ -621,7 +638,11 @@
   }
 
   function processQueue() {
-    if (!ttsEnabled || isSpeaking || ttsQueue.length === 0) return;
+    if (!ttsEnabled || isSpeaking || ttsQueue.length === 0) {
+      /* When queue drains, show idle state in media session to keep it alive */
+      if (ttsEnabled && !isSpeaking && ttsQueue.length === 0) mediaSessionIdle();
+      return;
+    }
     isSpeaking = true;
 
     const next = ttsQueue.shift();
@@ -783,5 +804,8 @@
   });
 
   /* Request wake lock on load if TTS is enabled */
-  if (ttsEnabled) requestWakeLock();
+  if (ttsEnabled) {
+    requestWakeLock();
+    mediaSessionIdle();
+  }
 })();
