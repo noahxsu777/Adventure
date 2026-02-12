@@ -596,9 +596,12 @@
         break;
       case 'gift':
         if (toggleGift.checked) {
-          const giftText = `${msg.giftName} ×${msg.repeatCount}`;
           appendGiftMessage(msg.user, msg.giftName, msg.repeatCount, msg.diamondCount, msg.giftPictureUrl, msg.profilePictureUrl);
-          if (readGiftsTTSToggle.checked) {
+          /* Only TTS-read when repeatEnd is true (combo finished or single gift) */
+          if (readGiftsTTSToggle.checked && msg.repeatEnd) {
+            const giftText = msg.repeatCount > 1
+              ? `${msg.user} envió un combo de ${msg.giftName}`
+              : `${msg.user} envió ${msg.giftName}`;
             enqueueTTS(msg.user, giftText, 'gift');
           }
           registerGift(msg.giftId, msg.giftName, msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);

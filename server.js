@@ -371,6 +371,7 @@ wss.on('connection', (ws) => {
               giftPictureUrl: data.giftPictureUrl || data.extendedGiftInfo?.image?.url_list?.[0] || '',
               diamondCount: data.diamondCount || data.extendedGiftInfo?.diamond_count || 0,
               repeatCount: data.repeatCount || 1,
+              repeatEnd: data.repeatEnd ?? true,
               profilePictureUrl: data.user?.profilePictureUrl || ''
             });
           });
