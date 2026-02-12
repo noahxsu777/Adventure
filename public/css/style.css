@@ -815,8 +815,8 @@ html, body {
   gap: 16px;
   padding: 12px 0;
 }
-@media (min-width: 600px) {
-  .live-grid { grid-template-columns: 1fr 1fr; }
+@media (min-width: 900px) {
+  .live-grid { grid-template-columns: 1fr 1fr 1fr; }
 }
 .live-card {
   position: relative;
@@ -827,14 +827,19 @@ html, body {
   flex-direction: column;
   gap: 12px;
 }
-.live-card-food {
+.live-card-props {
   background: linear-gradient(135deg, #ff6b35 0%, #ff2c55 100%);
 }
 .live-card-minecraft {
   background: linear-gradient(135deg, #2ecc71 0%, #1a8a4a 100%);
 }
-.live-card-icon {
-  font-size: 48px;
+.live-card-gta {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+.live-card-logo {
+  width: 120px;
+  max-height: 80px;
+  object-fit: contain;
   animation: liveFloat 3s ease-in-out infinite;
 }
 @keyframes liveFloat {
