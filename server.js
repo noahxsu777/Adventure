@@ -356,7 +356,9 @@ wss.on('connection', (ws) => {
               user: data.user?.uniqueId || 'unknown',
               nickname: data.user?.nickname || '',
               comment: data.comment || '',
-              profilePictureUrl: data.user?.profilePictureUrl || ''
+              profilePictureUrl: data.user?.profilePictureUrl || '',
+              isModerator: data.userIdentity?.isModeratorOfAnchor || false,
+              isSubscriber: data.userIdentity?.isSubscriberOfAnchor || false
             });
           });
 

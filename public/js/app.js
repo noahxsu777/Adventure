@@ -23,7 +23,9 @@
   const speedValue      = $('#speedValue');
   const voiceSelect     = $('#voiceSelect');
   const readUsernameToggle = $('#readUsernameToggle');
-  const readGiftSenderToggle = $('#readGiftSenderToggle');
+  const readAllToggle   = $('#readAllToggle');
+  const readModsToggle  = $('#readModsToggle');
+  const readSubsToggle  = $('#readSubsToggle');
   const readGiftsTTSToggle = $('#readGiftsTTSToggle');
 
   const ttsProvider     = $('#ttsProvider');
@@ -589,7 +591,7 @@
       case 'chat':
         if (toggleChat.checked) {
           appendMessage('chat', msg.user, msg.comment, msg.profilePictureUrl);
-          enqueueTTS(msg.user, msg.comment, 'chat');
+          enqueueTTS(msg.user, msg.comment, 'chat', msg.isModerator, msg.isSubscriber);
         }
         break;
       case 'gift':
@@ -1003,8 +1005,17 @@
     speakViaAudio(url, text);
   }
 
-  function enqueueTTS(user, text, eventType = 'chat') {
+  function enqueueTTS(user, text, eventType = 'chat', isModerator = false, isSubscriber = false) {
     if (!ttsEnabled) return;
+
+    /* Role-based filter: skip chat messages that don't match enabled roles */
+    if (eventType === 'chat') {
+      if (!readAllToggle.checked) {
+        const allowMod = readModsToggle.checked && isModerator;
+        const allowSub = readSubsToggle.checked && isSubscriber;
+        if (!allowMod && !allowSub) return;
+      }
+    }
 
     const id = `${user}:${text}`;
     if (seenIds.has(id)) return;
@@ -1020,7 +1031,7 @@
 
     let label;
     if (eventType === 'gift') {
-      label = readGiftSenderToggle.checked ? `${user} envió ${text}` : text;
+      label = text;
     } else {
       label = readUsernameToggle.checked ? `${user} says: ${text}` : text;
     }
