@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const sharp = require('sharp');
+const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
 const app = express();
 const server = http.createServer(app);
@@ -121,6 +122,52 @@ app.get('/api/tiktok-tts', async (req, res) => {
     res.send(audioBuffer);
   } catch (err) {
     res.status(502).send('TikTok TTS proxy error: ' + err.message);
+  }
+});
+
+/* Microsoft Edge TTS proxy — high-quality neural voices, free, no registration */
+const EDGE_VOICES = new Set([
+  'es-CO-SalomeNeural','es-CO-GonzaloNeural',
+  'es-MX-DaliaNeural','es-MX-JorgeNeural',
+  'es-ES-ElviraNeural','es-ES-AlvaroNeural',
+  'es-AR-ElenaNeural','es-AR-TomasNeural',
+  'es-CL-CatalinaNeural','es-CL-LorenzoNeural',
+  'es-VE-PaolaNeural','es-VE-SebastianNeural',
+  'es-PE-CamilaNeural','es-PE-AlexNeural',
+  'en-US-JennyNeural','en-US-GuyNeural','en-US-AriaNeural','en-US-DavisNeural',
+  'en-GB-SoniaNeural','en-GB-RyanNeural',
+  'pt-BR-FranciscaNeural','pt-BR-AntonioNeural',
+  'fr-FR-DeniseNeural','fr-FR-HenriNeural',
+  'de-DE-KatjaNeural','de-DE-ConradNeural',
+  'it-IT-ElsaNeural','it-IT-DiegoNeural',
+  'ja-JP-NanamiNeural','ja-JP-KeitaNeural',
+  'ko-KR-SunHiNeural','ko-KR-InJoonNeural',
+  'zh-CN-XiaoxiaoNeural','zh-CN-YunxiNeural'
+]);
+
+app.get('/api/edge-tts', async (req, res) => {
+  const { voice, text } = req.query;
+  if (!text) return res.status(400).send('Missing text');
+  const safeVoice = EDGE_VOICES.has(voice) ? voice : 'es-CO-SalomeNeural';
+
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(safeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text.slice(0, 300));
+
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      audioStream.on('data', (chunk) => chunks.push(chunk));
+      audioStream.on('end', resolve);
+      audioStream.on('error', reject);
+    });
+    const buffer = Buffer.concat(chunks);
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.send(buffer);
+  } catch (err) {
+    const msg = typeof err === 'string' ? err : (err?.message || 'Unknown error');
+    res.status(502).send('Edge TTS proxy error: ' + msg);
   }
 });
 

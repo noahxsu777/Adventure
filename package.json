@@ -17,6 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
+    "msedge-tts": "^2.0.4",
     "sharp": "^0.34.5",
     "tiktok-live-connector": "^2.1.0",
     "ws": "^8.18.0"

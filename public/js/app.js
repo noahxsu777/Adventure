@@ -36,6 +36,8 @@
   const gttsLangSelect  = $('#gttsLangSelect');
   const tiktokVoiceGroup = $('#tiktokVoiceGroup');
   const tiktokVoiceSelect = $('#tiktokVoiceSelect');
+  const edgeVoiceGroup  = $('#edgeVoiceGroup');
+  const edgeVoiceSelect = $('#edgeVoiceSelect');
   const testTtsBtn      = $('#testTtsBtn');
 
   const filterEnabled   = $('#filterEnabled');
@@ -470,6 +472,7 @@
     seVoiceGroup.classList.toggle('hidden', val !== 'streamelements');
     gttsLangGroup.classList.toggle('hidden', val !== 'google');
     tiktokVoiceGroup.classList.toggle('hidden', val !== 'tiktok');
+    edgeVoiceGroup.classList.toggle('hidden', val !== 'edge');
   });
 
   /* ---------- TTS Toggle ---------- */
@@ -1008,6 +1011,12 @@
     speakViaAudio(url, text);
   }
 
+  function speakEdgeTTS(text) {
+    const voice = edgeVoiceSelect.value;
+    const url = `/api/edge-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(text)}`;
+    speakViaAudio(url, text);
+  }
+
   function enqueueTTS(user, text, eventType = 'chat', isModerator = false, isSubscriber = false) {
     if (!ttsEnabled) return;
 
@@ -1067,6 +1076,10 @@
       speakTikTok(next);
       return;
     }
+    if (provider === 'edge') {
+      speakEdgeTTS(next);
+      return;
+    }
 
     const utter = new SpeechSynthesisUtterance(next);
     utter.volume = parseFloat(volumeSlider.value);
@@ -1124,6 +1137,14 @@
     } else if (provider === 'tiktok') {
       const voice = tiktokVoiceSelect.value;
       const url = `/api/tiktok-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
+      const audio = new Audio(url);
+      audio.volume = parseFloat(volumeSlider.value);
+      audio.playbackRate = parseFloat(speedSlider.value);
+      updateMediaSession(testText);
+      audio.play().catch(() => {});
+    } else if (provider === 'edge') {
+      const voice = edgeVoiceSelect.value;
+      const url = `/api/edge-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
       const audio = new Audio(url);
       audio.volume = parseFloat(volumeSlider.value);
       audio.playbackRate = parseFloat(speedSlider.value);
