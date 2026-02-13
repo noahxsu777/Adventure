@@ -880,3 +880,54 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+/* ============================================================
+   ELA Network Exclusive Banner
+   ============================================================ */
+.ela-banner {
+  text-align: center;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #fe2c55 0%, #25f4ee 50%, #fe2c55 100%);
+  background-size: 200% 200%;
+  animation: bannerGradient 3s ease-in-out infinite;
+}
+.ela-banner-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  letter-spacing: 0.5px;
+}
+@keyframes bannerGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ============================================================
+   Footer – Alliance Inside LLC
+   ============================================================ */
+.app-footer {
+  text-align: center;
+  padding: 16px 16px calc(var(--safe-bottom) + 16px);
+  background: var(--surface);
+  border-top: 0.5px solid rgba(255,255,255,0.08);
+}
+.footer-brand {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.footer-heart {
+  display: inline-block;
+  animation: heartPulse 1.2s ease-in-out infinite;
+}
+@keyframes heartPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+.footer-disclaimer {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
