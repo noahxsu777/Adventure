@@ -1,5 +1,5 @@
 /* ============================================================
-   Service Worker – TikTok Live TTS PWA
+   Service Worker – Lively PWA
    Handles caching, offline support, and background operation
    ============================================================ */
 const CACHE_NAME = 'live-tts-v2';
@@ -56,7 +56,7 @@ self.addEventListener('fetch', (event) => {
 /* ---------- Push Notifications ---------- */
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
-  const title = data.title || 'TikTok Live TTS';
+  const title = data.title || 'Lively';
   const options = {
     body: data.body || 'New activity on your live stream',
     icon: data.icon || '/icons/icon-192.png',

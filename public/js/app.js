@@ -928,7 +928,7 @@
     }
     navigator.mediaSession.metadata = new MediaMetadata({
       title: text.length > 60 ? text.slice(0, 57) + '…' : text,
-      artist: 'TikTok Live TTS',
+      artist: 'Lively',
       album: currentUsername ? `@${currentUsername}` : 'Live Stream'
     });
     navigator.mediaSession.playbackState = 'playing';
@@ -939,7 +939,7 @@
     if (!('mediaSession' in navigator) || !ttsEnabled) return;
     navigator.mediaSession.metadata = new MediaMetadata({
       title: 'Waiting for messages…',
-      artist: 'TikTok Live TTS',
+      artist: 'Lively',
       album: currentUsername ? `@${currentUsername}` : 'Live Stream'
     });
     navigator.mediaSession.playbackState = 'playing';

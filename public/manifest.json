@@ -1,7 +1,7 @@
 {
-  "name": "TikTok Live TTS",
-  "short_name": "Live TTS",
-  "description": "Real-time TikTok Live chat text-to-speech",
+  "name": "Lively",
+  "short_name": "Lively",
+  "description": "App para creadores",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
@@ -12,15 +12,15 @@
   "scope": "/",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='128' fill='%23000'/><path d='M362 64h-42a106 106 0 0 0 106 106v42a148 148 0 0 1-106-42v170a128 128 0 1 1-128-128v42a86 86 0 1 0 86 86V64h84Z' fill='%23fe2c55'/></svg>",
+      "src": "https://iili.io/qHKDphQ.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='48' fill='%23000'/><path d='M136 24h-16a40 40 0 0 0 40 40v16a56 56 0 0 1-40-16v64a48 48 0 1 1-48-48v16a32 32 0 1 0 32 32V24h32Z' fill='%23fe2c55'/></svg>",
+      "src": "https://iili.io/qHKDphQ.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
