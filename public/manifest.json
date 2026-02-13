@@ -12,16 +12,16 @@
   "scope": "/",
   "icons": [
     {
-      "src": "https://i.imgur.com/MMF1AZ6.jpeg",
+      "src": "/img/logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "https://i.imgur.com/MMF1AZ6.jpeg",
+      "src": "/img/logo.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

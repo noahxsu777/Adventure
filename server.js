@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const sharp = require('sharp');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +11,34 @@ app.use(express.static('public'));
 app.use(express.json());
 
 app.get('/healthz', (_req, res) => res.status(200).type('text/plain').send('ok'));
+
+/* Logo with transparent background (cached in memory) */
+const LOGO_URL = 'https://i.imgur.com/MMF1AZ6.jpeg';
+let cachedLogoPng = null;
+
+app.get('/img/logo.png', async (_req, res) => {
+  try {
+    if (cachedLogoPng) {
+      return res.set('Cache-Control', 'public, max-age=86400').type('image/png').send(cachedLogoPng);
+    }
+    const resp = await fetch(LOGO_URL);
+    if (!resp.ok) throw new Error(`Logo fetch failed: ${resp.status}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const pixels = data;
+    const threshold = 230; // near-white threshold
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] > threshold && pixels[i + 1] > threshold && pixels[i + 2] > threshold) {
+        pixels[i + 3] = 0; // set alpha to 0 for white/near-white pixels
+      }
+    }
+    cachedLogoPng = await sharp(pixels, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+    res.set('Cache-Control', 'public, max-age=86400').type('image/png').send(cachedLogoPng);
+  } catch (err) {
+    console.error('Logo processing error:', err.message);
+    res.redirect(LOGO_URL);
+  }
+});
 
 /* Proxy StreamElements TTS to avoid CORS issues */
 const SE_VOICES = new Set([

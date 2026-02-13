@@ -7,10 +7,17 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["tiktok", "live", "chat", "tts", "websocket"],
+  "keywords": [
+    "tiktok",
+    "live",
+    "chat",
+    "tts",
+    "websocket"
+  ],
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
+    "sharp": "^0.34.5",
     "tiktok-live-connector": "^2.1.0",
     "ws": "^8.18.0"
   }
