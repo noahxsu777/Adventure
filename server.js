@@ -477,6 +477,16 @@ wss.on('connection', (ws) => {
             });
           });
 
+          connection.on(WebcastEvent.EMOTE, (data) => {
+            broadcast(ws, 'emote', {
+              user: data.user?.uniqueId || 'unknown',
+              nickname: data.user?.nickname || '',
+              emoteId: data.emoteId || data.emote?.emoteId || '',
+              emoteImageUrl: data.emote?.image?.imageUri || data.emote?.image?.urlList?.[0] || '',
+              profilePictureUrl: data.user?.profilePictureUrl || ''
+            });
+          });
+
           /* Server-side auto-reconnect: keep connection alive */
           connection.on('disconnected', () => {
             console.log(`TikTok disconnected for ${username}, will auto-reconnect server-side`);

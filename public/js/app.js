@@ -49,6 +49,7 @@
   const giftGalleryGrid = $('#giftGalleryGrid');
   const giftSearch      = $('#giftSearch');
   const soundLibrary    = $('#soundLibrary');
+  const triggersGrid    = $('#triggersGrid');
 
   /* Sound Browser Modal */
   const soundModal        = $('#soundModal');
@@ -124,6 +125,17 @@
     try { localStorage.setItem('giftSounds', JSON.stringify(giftSounds)); } catch {}
   }
 
+  /* Trigger (emote/sticker) registry and sound assignments */
+  const triggerRegistry = {}; /* { emoteId: { emoteImageUrl, count } } */
+  const triggerSounds = {};
+  try {
+    const saved = localStorage.getItem('triggerSounds');
+    if (saved) Object.assign(triggerSounds, JSON.parse(saved));
+  } catch {}
+  function saveTriggerSounds() {
+    try { localStorage.setItem('triggerSounds', JSON.stringify(triggerSounds)); } catch {}
+  }
+
   /* Uploaded sounds: { 'up:filename.mp3': { name, dataUrl } } */
   const uploadedSounds = {};
   try {
@@ -136,6 +148,7 @@
 
   /* Currently targeted gift ID for sound modal */
   let soundModalGiftId = null;
+  let soundModalTriggerId = null;
 
   /* Track currently playing preview audio to stop it when a new one plays */
   let currentPreviewAudio = null;
@@ -279,6 +292,18 @@
               renderGiftGallery(giftSearch.value);
             });
             row.appendChild(useB);
+          } else if (soundModalTriggerId) {
+            const useB = document.createElement('button');
+            useB.className = 'sound-row-btn use';
+            useB.textContent = '✓ Use';
+            useB.addEventListener('click', (e) => {
+              e.stopPropagation();
+              triggerSounds[soundModalTriggerId] = k;
+              saveTriggerSounds();
+              closeSoundModal();
+              renderTriggers();
+            });
+            row.appendChild(useB);
           }
 
           const delB = document.createElement('button');
@@ -341,6 +366,20 @@
             renderGiftGallery(giftSearch.value);
           });
           row.appendChild(useB);
+        } else if (soundModalTriggerId) {
+          const useB = document.createElement('button');
+          useB.className = 'sound-row-btn use';
+          useB.textContent = '✓ Use';
+          useB.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const soundKey = 'mi:' + s.mp3;
+            triggerSounds[soundModalTriggerId] = soundKey;
+            try { localStorage.setItem('miName:' + soundKey, s.title); } catch {}
+            saveTriggerSounds();
+            closeSoundModal();
+            renderTriggers();
+          });
+          row.appendChild(useB);
         }
 
         container.appendChild(row);
@@ -361,8 +400,9 @@
       .catch(() => cachedPopularSounds);
   }
 
-  function openSoundModal(giftId) {
+  function openSoundModal(giftId, triggerId) {
     soundModalGiftId = giftId || null;
+    soundModalTriggerId = triggerId || null;
     soundModal.classList.remove('hidden');
     soundModalSearch.value = '';
     /* Show popular sounds by default */
@@ -381,6 +421,7 @@
     stopPreview();
     soundModal.classList.add('hidden');
     soundModalGiftId = null;
+    soundModalTriggerId = null;
   }
 
   soundModalClose.addEventListener('click', closeSoundModal);
@@ -621,6 +662,9 @@
           appendMessage('follow', msg.user, 'followed!', msg.profilePictureUrl);
           enqueueTTS(msg.user, 'just followed!', 'follow');
         }
+        break;
+      case 'emote':
+        registerTrigger(msg.emoteId, msg.emoteImageUrl, msg.user);
         break;
       default:
         break;
@@ -889,6 +933,131 @@
       });
 
       giftGalleryGrid.appendChild(card);
+    });
+  }
+
+  /* ---------- Triggers (Emotes/Stickers) ---------- */
+  function registerTrigger(emoteId, emoteImageUrl, user) {
+    if (!emoteId) return;
+    const key = String(emoteId);
+    if (triggerRegistry[key]) {
+      triggerRegistry[key].count += 1;
+      if (emoteImageUrl) triggerRegistry[key].emoteImageUrl = emoteImageUrl;
+    } else {
+      triggerRegistry[key] = { emoteImageUrl: emoteImageUrl || '', count: 1 };
+    }
+    /* Play assigned sound */
+    const assignedSound = triggerSounds[key];
+    if (assignedSound) playAlertSound(assignedSound);
+    renderTriggers();
+  }
+
+  function renderTriggers() {
+    const keys = Object.keys(triggerRegistry);
+    if (keys.length === 0) {
+      triggersGrid.innerHTML = '<div class="gift-empty">Emotes will appear here when viewers send them during a LIVE.</div>';
+      return;
+    }
+    triggersGrid.innerHTML = '';
+    const popularKeys = new Set(cachedPopularSounds.map(s => 'mi:' + s.mp3));
+    keys.forEach(tid => {
+      const t = triggerRegistry[tid];
+      const card = document.createElement('div');
+      card.className = 'gift-card trigger-card';
+
+      if (t.emoteImageUrl) {
+        const img = document.createElement('img');
+        img.src = t.emoteImageUrl;
+        img.alt = 'Emote';
+        img.onerror = function () { this.src = ''; };
+        card.appendChild(img);
+      } else {
+        const placeholder = document.createElement('div');
+        placeholder.style.cssText = 'width:56px;height:56px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;';
+        placeholder.textContent = '🎭';
+        card.appendChild(placeholder);
+      }
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'gift-card-name';
+      nameDiv.textContent = `Emote #${tid}`;
+      card.appendChild(nameDiv);
+
+      const countDiv = document.createElement('div');
+      countDiv.className = 'gift-card-count';
+      countDiv.textContent = `Sent: ${t.count}×`;
+      card.appendChild(countDiv);
+
+      /* Sound assignment dropdown */
+      const sel = document.createElement('select');
+      const noOpt = document.createElement('option');
+      noOpt.value = '';
+      noOpt.textContent = 'No sound';
+      sel.appendChild(noOpt);
+
+      const currentSound = triggerSounds[tid];
+      if (cachedPopularSounds.length > 0) {
+        const popGroup = document.createElement('optgroup');
+        popGroup.label = '🔥 Popular';
+        cachedPopularSounds.forEach(s => {
+          const opt = document.createElement('option');
+          const soundKey = 'mi:' + s.mp3;
+          opt.value = soundKey;
+          opt.textContent = s.title;
+          if (currentSound === soundKey) opt.selected = true;
+          popGroup.appendChild(opt);
+        });
+        sel.appendChild(popGroup);
+      }
+
+      if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
+        const miGroup = document.createElement('optgroup');
+        miGroup.label = '🌐 MyInstants';
+        const miOpt = document.createElement('option');
+        miOpt.value = currentSound;
+        const savedName = localStorage.getItem('miName:' + currentSound) || 'Custom sound';
+        miOpt.textContent = `🔊 ${savedName}`;
+        miOpt.selected = true;
+        miGroup.appendChild(miOpt);
+        sel.appendChild(miGroup);
+      }
+
+      card.appendChild(sel);
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'gift-btn-row';
+
+      const testBtn = document.createElement('button');
+      testBtn.className = 'btn-play-sound';
+      testBtn.textContent = '▶ Test';
+      btnRow.appendChild(testBtn);
+
+      const searchSoundBtn = document.createElement('button');
+      searchSoundBtn.className = 'btn-search-sound';
+      searchSoundBtn.textContent = '🔍 Sound';
+      btnRow.appendChild(searchSoundBtn);
+
+      card.appendChild(btnRow);
+
+      sel.addEventListener('change', () => {
+        if (sel.value) {
+          triggerSounds[tid] = sel.value;
+        } else {
+          delete triggerSounds[tid];
+        }
+        saveTriggerSounds();
+      });
+
+      testBtn.addEventListener('click', () => {
+        const sid = triggerSounds[tid] || sel.value;
+        if (sid) playAlertSound(sid);
+      });
+
+      searchSoundBtn.addEventListener('click', () => {
+        openSoundModal(null, tid);
+      });
+
+      triggersGrid.appendChild(card);
     });
   }
 

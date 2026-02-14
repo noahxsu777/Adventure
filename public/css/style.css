@@ -551,6 +551,11 @@ body {
 /* Sound Library */
 .sound-library { max-width: 600px; }
 
+/* Triggers Section */
+.triggers-section { margin-top: 16px; }
+.triggers-section h3 { color: var(--accent2); }
+.trigger-card { border-left: 3px solid var(--accent2); }
+
 .sound-section-title {
   font-size: 0.85rem;
   font-weight: 700;
