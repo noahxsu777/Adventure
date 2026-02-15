@@ -478,13 +478,27 @@ wss.on('connection', (ws) => {
           });
 
           connection.on(WebcastEvent.EMOTE, (data) => {
-            broadcast(ws, 'emote', {
-              user: data.user?.uniqueId || 'unknown',
-              nickname: data.user?.nickname || '',
-              emoteId: data.emoteId || data.emote?.emoteId || '',
-              emoteImageUrl: data.emote?.image?.imageUri || data.emote?.image?.urlList?.[0] || '',
-              profilePictureUrl: data.user?.profilePictureUrl || ''
-            });
+            const user = data.user?.uniqueId || 'unknown';
+            const nickname = data.user?.nickname || '';
+            const profilePictureUrl = data.user?.profilePictureUrl || '';
+
+            /* Send individual emotes from emoteList for trigger collection */
+            const emoteList = Array.isArray(data.emoteList) ? data.emoteList : [];
+            if (emoteList.length > 0) {
+              emoteList.forEach(e => {
+                const eid = e.emoteId || '';
+                const eimg = e.image?.imageUri || e.image?.urlList?.[0] || '';
+                if (eid) broadcast(ws, 'emote', { user, nickname, emoteId: eid, emoteImageUrl: eimg, profilePictureUrl });
+              });
+            } else {
+              /* Fallback: single emote from legacy fields */
+              broadcast(ws, 'emote', {
+                user, nickname,
+                emoteId: data.emoteId || data.emote?.emoteId || '',
+                emoteImageUrl: data.emote?.image?.imageUri || data.emote?.image?.urlList?.[0] || '',
+                profilePictureUrl
+              });
+            }
           });
 
           /* Server-side auto-reconnect: keep connection alive */

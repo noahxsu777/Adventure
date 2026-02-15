@@ -132,8 +132,15 @@
     const saved = localStorage.getItem('triggerSounds');
     if (saved) Object.assign(triggerSounds, JSON.parse(saved));
   } catch {}
+  try {
+    const savedTriggers = localStorage.getItem('triggerRegistry');
+    if (savedTriggers) Object.assign(triggerRegistry, JSON.parse(savedTriggers));
+  } catch {}
   function saveTriggerSounds() {
     try { localStorage.setItem('triggerSounds', JSON.stringify(triggerSounds)); } catch {}
+  }
+  function saveTriggerRegistry() {
+    try { localStorage.setItem('triggerRegistry', JSON.stringify(triggerRegistry)); } catch {}
   }
 
   /* Uploaded sounds: { 'up:filename.mp3': { name, dataUrl } } */
@@ -500,6 +507,7 @@
 
   renderSoundLibrary();
   renderGiftGallery();
+  renderTriggers();
 
   /* Gift search filter */
   giftSearch.addEventListener('input', () => {
@@ -946,6 +954,7 @@
     } else {
       triggerRegistry[key] = { emoteImageUrl: emoteImageUrl || '', count: 1 };
     }
+    saveTriggerRegistry();
     /* Play assigned sound */
     const assignedSound = triggerSounds[key];
     if (assignedSound) playAlertSound(assignedSound);
@@ -955,7 +964,7 @@
   function renderTriggers() {
     const keys = Object.keys(triggerRegistry);
     if (keys.length === 0) {
-      triggersGrid.innerHTML = '<div class="gift-empty">Emotes will appear here when viewers send them during a LIVE.</div>';
+      triggersGrid.innerHTML = '<div class="gift-empty">Stickers will load automatically when viewers use them during a LIVE session. They are saved for future sessions.</div>';
       return;
     }
     triggersGrid.innerHTML = '';
