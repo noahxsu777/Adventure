@@ -403,7 +403,7 @@ wss.on('connection', (ws) => {
         function createAndConnect() {
           const connection = new TikTokLiveConnection(username, {
             processInitialData: false,
-            enableExtendedGiftInfo: true
+            enableExtendedGiftInfo: false
           });
 
           /* Store connection + metadata for this client */
@@ -443,9 +443,9 @@ wss.on('connection', (ws) => {
               user: data.user?.uniqueId || 'unknown',
               nickname: data.user?.nickname || '',
               giftId: data.giftId,
-              giftName: data.giftName || data.extendedGiftInfo?.name || `Gift #${data.giftId}`,
-              giftPictureUrl: data.giftPictureUrl || data.extendedGiftInfo?.image?.url_list?.[0] || '',
-              diamondCount: data.diamondCount || data.extendedGiftInfo?.diamond_count || 0,
+              giftName: data.giftName || `Gift #${data.giftId}`,
+              giftPictureUrl: data.giftPictureUrl || '',
+              diamondCount: data.diamondCount || 0,
               repeatCount: data.repeatCount || 1,
               repeatEnd: data.repeatEnd ?? true,
               profilePictureUrl: data.user?.profilePictureUrl || ''
