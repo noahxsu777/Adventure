@@ -400,10 +400,10 @@ wss.on('connection', (ws) => {
 
       import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent, UserOfflineError }) => {
 
-        function createAndConnect() {
+        function createAndConnect(extendedGiftInfo = true) {
           const connection = new TikTokLiveConnection(username, {
             processInitialData: false,
-            enableExtendedGiftInfo: false
+            enableExtendedGiftInfo: extendedGiftInfo
           });
 
           /* Store connection + metadata for this client */
@@ -411,12 +411,20 @@ wss.on('connection', (ws) => {
 
           connection.connect()
             .then((state) => {
-              console.log(`Connected to ${username} (roomId ${state.roomId})`);
+              console.log(`Connected to ${username} (roomId ${state.roomId}, extendedGifts=${extendedGiftInfo})`);
               reconnectDelay = 5000; /* reset backoff on success */
-              broadcast(ws, 'connected', { username, roomId: state.roomId });
+              broadcast(ws, 'connected', { username, roomId: state.roomId, extendedGiftInfo });
             })
             .catch((err) => {
               console.error('Connection failed:', err.message);
+
+              /* If enableExtendedGiftInfo caused a 403, retry without it */
+              if (extendedGiftInfo && (err.message || '').includes('403')) {
+                console.log('Extended gift info failed (403), retrying without it...');
+                createAndConnect(false);
+                return;
+              }
+
               /* Translate known errors to Spanish */
               let errorMsg = err.message;
               if (UserOfflineError && err instanceof UserOfflineError) {

@@ -170,12 +170,42 @@
   /* Pre-populate gallery from static catalog (loaded from gifts.js) */
   /* Name → key lookup for O(1) matching during live events */
   const giftNameIndex = {};
+  const giftIdIndex = {}; /* giftId → registry key for ID-based matching */
   if (typeof TIKTOK_GIFT_CATALOG !== 'undefined') {
     TIKTOK_GIFT_CATALOG.forEach((g, i) => {
       const key = 'catalog_' + i;
       giftRegistry[key] = { name: g.name, imageUrl: g.image, diamonds: 0, count: 0 };
       giftNameIndex[g.name.toLowerCase()] = key;
+      if (g.id) giftIdIndex[String(g.id)] = key;
     });
+  }
+
+  /* Load previously learned gifts (gifts seen during past live sessions) */
+  try {
+    const learned = localStorage.getItem('learnedGifts');
+    if (learned) {
+      const parsed = JSON.parse(learned);
+      Object.entries(parsed).forEach(([gid, g]) => {
+        if (!giftRegistry[gid]) {
+          giftRegistry[gid] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds || 0, count: 0 };
+        }
+        if (g.imageUrl && giftRegistry[gid] && !giftRegistry[gid].imageUrl) {
+          giftRegistry[gid].imageUrl = g.imageUrl;
+        }
+        giftIdIndex[gid] = gid;
+        if (g.name) giftNameIndex[g.name.toLowerCase()] = gid;
+      });
+    }
+  } catch {}
+  function saveLearnedGifts() {
+    /* Save non-catalog gifts that have an image (learned from live events) */
+    const learned = {};
+    Object.entries(giftRegistry).forEach(([key, g]) => {
+      if (!key.startsWith('catalog_') && g.imageUrl) {
+        learned[key] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds };
+      }
+    });
+    try { localStorage.setItem('learnedGifts', JSON.stringify(learned)); } catch {}
   }
 
   /* ---------- Built-in alert sounds (kept for backward compat with saved assignments) ---------- */
@@ -648,15 +678,28 @@
         break;
       case 'gift':
         if (toggleGift.checked) {
-          appendGiftMessage(msg.user, msg.giftName, msg.repeatCount, msg.diamondCount, msg.giftPictureUrl, msg.profilePictureUrl);
+          /* Try to resolve gift image from catalog/learned gifts if server didn't provide one */
+          let resolvedPictureUrl = msg.giftPictureUrl || '';
+          let resolvedName = msg.giftName;
+          if (!resolvedPictureUrl) {
+            const idStr = msg.giftId ? String(msg.giftId) : null;
+            const byId = idStr ? giftIdIndex[idStr] : null;
+            const byName = msg.giftName ? giftNameIndex[msg.giftName.toLowerCase()] : null;
+            const regKey = byId || byName || idStr;
+            if (regKey && giftRegistry[regKey]) {
+              resolvedPictureUrl = giftRegistry[regKey].imageUrl || '';
+              if (resolvedName.startsWith('Gift #')) resolvedName = giftRegistry[regKey].name;
+            }
+          }
+          appendGiftMessage(msg.user, resolvedName, msg.repeatCount, msg.diamondCount, resolvedPictureUrl, msg.profilePictureUrl);
           /* Only TTS-read when repeatEnd is true (combo finished or single gift) */
           if (readGiftsTTSToggle.checked && msg.repeatEnd) {
             const giftText = msg.repeatCount > 1
-              ? `${msg.user} envió un combo de ${msg.giftName}`
-              : `${msg.user} envió ${msg.giftName}`;
+              ? `${msg.user} envió un combo de ${resolvedName}`
+              : `${msg.user} envió ${resolvedName}`;
             enqueueTTS(msg.user, giftText, 'gift');
           }
-          registerGift(msg.giftId, msg.giftName, msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);
+          registerGift(msg.giftId, resolvedName, resolvedPictureUrl || msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);
         }
         break;
       case 'like':
@@ -775,20 +818,44 @@
   function registerGift(giftId, name, imageUrl, diamonds, count) {
     if (!giftId && !name) return;
 
-    /* O(1) lookup by name into the catalog */
-    let key = giftId ? String(giftId) : null;
-    const catalogKey = name ? giftNameIndex[name.toLowerCase()] : undefined;
+    const idStr = giftId ? String(giftId) : null;
+    let key = null;
 
-    if (catalogKey) {
-      /* Update the catalog entry with live data */
-      giftRegistry[catalogKey].count += (count || 1);
-      if (imageUrl) giftRegistry[catalogKey].imageUrl = imageUrl;
-      if (diamonds) giftRegistry[catalogKey].diamonds = diamonds;
-      key = catalogKey;
-    } else if (key && giftRegistry[key]) {
-      giftRegistry[key].count += (count || 1);
-    } else if (key) {
-      giftRegistry[key] = { name, imageUrl, diamonds, count: count || 1 };
+    /* 1. Try matching by giftId first (most reliable) */
+    if (idStr && giftIdIndex[idStr]) {
+      key = giftIdIndex[idStr];
+    }
+    /* 2. Fall back to name-based matching */
+    if (!key && name) {
+      const catalogKey = giftNameIndex[name.toLowerCase()];
+      if (catalogKey) key = catalogKey;
+    }
+    /* 3. Use existing registry entry by raw ID */
+    if (!key && idStr && giftRegistry[idStr]) {
+      key = idStr;
+    }
+    /* 4. Create new entry for unknown gift */
+    if (!key) {
+      key = idStr || ('unknown_' + (name || Date.now()));
+      giftRegistry[key] = { name: name || `Gift #${giftId}`, imageUrl: imageUrl || '', diamonds: diamonds || 0, count: 0 };
+    }
+
+    /* Update existing entry with live data */
+    giftRegistry[key].count += (count || 1);
+    if (imageUrl && imageUrl.startsWith('http')) giftRegistry[key].imageUrl = imageUrl;
+    else if (imageUrl && !giftRegistry[key].imageUrl) giftRegistry[key].imageUrl = imageUrl;
+    if (diamonds) giftRegistry[key].diamonds = diamonds;
+    if (name && giftRegistry[key].name.startsWith('Gift #')) giftRegistry[key].name = name;
+
+    /* Link giftId to this key for future lookups */
+    if (idStr) {
+      giftIdIndex[idStr] = key;
+      if (name) giftNameIndex[name.toLowerCase()] = key;
+    }
+
+    /* Persist learned gifts that have images for future sessions */
+    if (imageUrl && imageUrl.startsWith('http')) {
+      saveLearnedGifts();
     }
 
     const assignedSound = giftSounds[key];
