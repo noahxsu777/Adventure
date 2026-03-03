@@ -366,6 +366,28 @@ const PORT = process.env.PORT || 3000;
 /** Track active TikTok connections per WebSocket client */
 const clients = new Map();
 
+/**
+ * Recursively scan an object for image URLs (stickers/emotes/badges).
+ * Returns [{ id, url, label }] — stops at `maxDepth` to avoid huge traversals.
+ */
+function extractImageUrls(obj, maxDepth, _depth = 0) {
+  const results = [];
+  if (!obj || _depth > maxDepth) return results;
+  if (typeof obj !== 'object') return results;
+  for (const [key, val] of Object.entries(obj)) {
+    if (typeof val === 'string') {
+      if (/tiktokcdn\.com.*\.(png|jpg|jpeg|webp|image)/i.test(val)) {
+        results.push({ id: obj.id || obj.emoteId || obj.emojiId || key, url: val, label: obj.name || obj.title || obj.emojiName || '' });
+      }
+    } else if (Array.isArray(val)) {
+      val.forEach(item => results.push(...extractImageUrls(item, maxDepth, _depth + 1)));
+    } else if (typeof val === 'object' && val !== null) {
+      results.push(...extractImageUrls(val, maxDepth, _depth + 1));
+    }
+  }
+  return results;
+}
+
 function broadcast(ws, type, payload) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type, ...payload }));
@@ -410,10 +432,59 @@ wss.on('connection', (ws) => {
           clients.set(ws, { connection, username, reconnectTimer: null });
 
           connection.connect()
-            .then((state) => {
+            .then(async (state) => {
               console.log(`Connected to ${username} (roomId ${state.roomId}, extendedGifts=${extendedGiftInfo})`);
               reconnectDelay = 5000; /* reset backoff on success */
               broadcast(ws, 'connected', { username, roomId: state.roomId, extendedGiftInfo });
+
+              /* ── Try to fetch fan club stickers / emotes on connect ── */
+              try {
+                const stickers = [];
+
+                /* 1. Scan roomInfo for any emote/sticker/badge image URLs */
+                const roomData = state.roomInfo;
+                if (roomData) {
+                  const found = extractImageUrls(roomData, 4);
+                  found.forEach(({ id, url, label }, idx) => {
+                    if (url && (url.includes('tiktokcdn') || url.includes('webcast'))) {
+                      stickers.push({ emoteId: id || `room_${idx}`, emoteImageUrl: url, label: label || 'Fan Sticker' });
+                    }
+                  });
+                }
+
+                /* 2. Try to fetch emote list from TikTok webcast API using the library's HTTP client */
+                const axios = connection.webClient?.axiosInstance;
+                if (axios && state.roomId) {
+                  try {
+                    const emojiResp = await axios.get('https://webcast.tiktok.com/webcast/emoji/list/', {
+                      params: { aid: '1988', room_id: state.roomId },
+                      timeout: 5000
+                    });
+                    const emojiData = emojiResp?.data?.data || emojiResp?.data;
+                    if (emojiData) {
+                      const panels = emojiData.emojiGroups || emojiData.emoji_groups || emojiData.panels || [];
+                      (Array.isArray(panels) ? panels : []).forEach(panel => {
+                        const emojis = panel.emojis || panel.emoji_list || panel.emojiList || panel.stickers || [];
+                        (Array.isArray(emojis) ? emojis : []).forEach(e => {
+                          const eid = e.emojiId || e.emoji_id || e.id || e.emoteId || '';
+                          const eimg = e.emojiUrl || e.emoji_url || e.url || e.image?.url?.[0] || e.image?.imageUri || '';
+                          const ename = e.emojiName || e.emoji_name || e.name || e.title || '';
+                          if (eid && eimg) stickers.push({ emoteId: String(eid), emoteImageUrl: eimg, label: ename || 'Sticker' });
+                        });
+                      });
+                    }
+                  } catch (emoErr) {
+                    console.log('Emoji list fetch failed (non-fatal):', emoErr.message);
+                  }
+                }
+
+                if (stickers.length > 0) {
+                  console.log(`Found ${stickers.length} stickers/emotes for ${username}`);
+                  broadcast(ws, 'fan_stickers', { stickers });
+                }
+              } catch (stickerErr) {
+                console.log('Sticker extraction failed (non-fatal):', stickerErr.message);
+              }
             })
             .catch((err) => {
               console.error('Connection failed:', err.message);
@@ -507,6 +578,25 @@ wss.on('connection', (ws) => {
                 profilePictureUrl
               });
             }
+          });
+
+          /* Capture super-fan and barrage stickers as triggers */
+          let sfCounter = 0;
+          connection.on(WebcastEvent.SUPER_FAN, (data) => {
+            const user = data.user?.uniqueId || 'unknown';
+            const imgs = extractImageUrls(data, 3);
+            imgs.forEach(({ id, url, label }) => {
+              if (url) broadcast(ws, 'emote', { user, emoteId: id || `sf_${++sfCounter}`, emoteImageUrl: url, label: label || 'SuperFan' });
+            });
+          });
+
+          let barCounter = 0;
+          connection.on(WebcastEvent.BARRAGE, (data) => {
+            const user = data.user?.uniqueId || 'unknown';
+            const imgs = extractImageUrls(data, 3);
+            imgs.forEach(({ id, url, label }) => {
+              if (url) broadcast(ws, 'emote', { user, emoteId: id || `bar_${++barCounter}`, emoteImageUrl: url, label: label || 'Barrage' });
+            });
           });
 
           /* Server-side auto-reconnect: keep connection alive */

@@ -717,6 +717,22 @@
       case 'emote':
         registerTrigger(msg.emoteId, msg.emoteImageUrl, msg.user);
         break;
+      case 'fan_stickers':
+        /* Pre-populate triggers from stickers found on connect */
+        if (Array.isArray(msg.stickers)) {
+          msg.stickers.forEach(s => {
+            if (!s.emoteId) return;
+            const key = String(s.emoteId);
+            if (!triggerRegistry[key]) {
+              triggerRegistry[key] = { emoteImageUrl: s.emoteImageUrl || '', count: 0, label: s.label || '' };
+            } else if (s.emoteImageUrl && !triggerRegistry[key].emoteImageUrl) {
+              triggerRegistry[key].emoteImageUrl = s.emoteImageUrl;
+            }
+          });
+          saveTriggerRegistry();
+          renderTriggers();
+        }
+        break;
       default:
         break;
     }
@@ -1031,7 +1047,7 @@
   function renderTriggers() {
     const keys = Object.keys(triggerRegistry);
     if (keys.length === 0) {
-      triggersGrid.innerHTML = '<div class="gift-empty">Stickers will load automatically when viewers use them during a LIVE session. They are saved for future sessions.</div>';
+      triggersGrid.innerHTML = '<div class="gift-empty">Los stickers del fan club se cargan automáticamente al conectarse. También se guardan cuando los viewers los usan.</div>';
       return;
     }
     triggersGrid.innerHTML = '';
@@ -1056,13 +1072,15 @@
 
       const nameDiv = document.createElement('div');
       nameDiv.className = 'gift-card-name';
-      nameDiv.textContent = `Emote #${tid}`;
+      nameDiv.textContent = t.label || `Emote #${tid}`;
       card.appendChild(nameDiv);
 
-      const countDiv = document.createElement('div');
-      countDiv.className = 'gift-card-count';
-      countDiv.textContent = `Sent: ${t.count}×`;
-      card.appendChild(countDiv);
+      if (t.count > 0) {
+        const countDiv = document.createElement('div');
+        countDiv.className = 'gift-card-count';
+        countDiv.textContent = `Sent: ${t.count}×`;
+        card.appendChild(countDiv);
+      }
 
       /* Sound assignment dropdown */
       const sel = document.createElement('select');
