@@ -661,7 +661,7 @@ const GIFT_CATALOG = [
 {id:17421,name:"Boo's Town",image:"https://p19-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/c836c81cc6e899fe392a3d11f69fafa3.png~tplv-obj.webp"},
 {id:17462,name:"Polaris",image:"https://p19-webcast.tiktokcdn.com/img/maliva/webcast-va/resource/6abb39fb8088a1897b8163e54394845c.png~tplv-obj.webp"},
 {id:17463,name:"Air Dancer",image:"https://p19-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/97c975dcce2483027ececde2b6719761.png~tplv-obj.webp"},
-{id:17490,name:"Capybara",image:"https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/6703facdac34caefbd0617a6321afe9b.png~tplv-obj.webp"},
+{id:14488,name:"Capybara",image:"https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/6703facdac34caefbd0617a6321afe9b.png~tplv-obj.webp"},
 {id:17528,name:"Boo Crew",image:"https://p19-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/5bb94d02865d181d7da2ba0f3c145e02.png~tplv-obj.webp"},
 {id:17548,name:"TikTok Crown",image:"https://p19-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/77289ae44d635380fa88e7bdfcfdc408.png~tplv-obj.webp"},
 {id:17588,name:"Uniform",image:"https://p19-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/cf2cc168b7a01054788c551a83dd0380.png~tplv-obj.webp"},
