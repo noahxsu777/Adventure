@@ -699,7 +699,7 @@
               : `${msg.user} envió ${resolvedName}`;
             enqueueTTS(msg.user, giftText, 'gift');
           }
-          registerGift(msg.giftId, resolvedName, resolvedPictureUrl || msg.giftPictureUrl, msg.diamondCount, msg.repeatCount);
+          registerGift(msg.giftId, resolvedName, resolvedPictureUrl || msg.giftPictureUrl, msg.diamondCount, msg.repeatCount, msg.repeatEnd);
         }
         break;
       case 'like':
@@ -815,7 +815,7 @@
   }
 
   /* ---------- Gift Gallery ---------- */
-  function registerGift(giftId, name, imageUrl, diamonds, count) {
+  function registerGift(giftId, name, imageUrl, diamonds, count, repeatEnd) {
     if (!giftId && !name) return;
 
     const idStr = giftId ? String(giftId) : null;
@@ -859,7 +859,7 @@
     }
 
     const assignedSound = giftSounds[key];
-    if (assignedSound) {
+    if (assignedSound && repeatEnd !== false) {
       playAlertSound(assignedSound);
     }
 
