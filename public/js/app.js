@@ -171,8 +171,8 @@
   /* Name → key lookup for O(1) matching during live events */
   const giftNameIndex = {};
   const giftIdIndex = {}; /* giftId → registry key for ID-based matching */
-  if (typeof TIKTOK_GIFT_CATALOG !== 'undefined') {
-    TIKTOK_GIFT_CATALOG.forEach((g, i) => {
+  if (typeof GIFT_CATALOG !== 'undefined') {
+    GIFT_CATALOG.forEach((g, i) => {
       const key = 'catalog_' + i;
       giftRegistry[key] = { name: g.name, imageUrl: g.image, diamonds: 0, count: 0 };
       giftNameIndex[g.name.toLowerCase()] = key;
