@@ -517,7 +517,18 @@ wss.on('connection', (ws) => {
             });
           });
 
+          /* Dedup: prevent broadcasting duplicate gift events within 2s window */
+          const recentGifts = {};
           connection.on(WebcastEvent.GIFT, (data) => {
+            const dedupKey = `${data.user?.uniqueId}_${data.giftId}_${data.repeatCount}`;
+            const now = Date.now();
+            if (recentGifts[dedupKey] && now - recentGifts[dedupKey] < 2000) return;
+            recentGifts[dedupKey] = now;
+            /* Cleanup old entries */
+            for (const k in recentGifts) {
+              if (now - recentGifts[k] > 5000) delete recentGifts[k];
+            }
+
             broadcast(ws, 'gift', {
               user: data.user?.uniqueId || 'unknown',
               nickname: data.user?.nickname || '',

@@ -157,6 +157,20 @@
   let soundModalGiftId = null;
   let soundModalTriggerId = null;
 
+  /* Dedup gift sounds: prevent same gift from playing sound twice within 3 seconds */
+  const recentGiftSounds = {};
+  function shouldPlayGiftSound(user, giftId) {
+    const dedupKey = (user || '') + '_' + (giftId || '');
+    const now = Date.now();
+    if (recentGiftSounds[dedupKey] && now - recentGiftSounds[dedupKey] < 3000) return false;
+    recentGiftSounds[dedupKey] = now;
+    /* Cleanup old entries every call */
+    for (const k in recentGiftSounds) {
+      if (now - recentGiftSounds[k] > 5000) delete recentGiftSounds[k];
+    }
+    return true;
+  }
+
   /* Track currently playing preview audio to stop it when a new one plays */
   let currentPreviewAudio = null;
   function stopPreview() {
@@ -699,7 +713,7 @@
               : `${msg.user} envió ${resolvedName}`;
             enqueueTTS(msg.user, giftText, 'gift');
           }
-          registerGift(msg.giftId, resolvedName, resolvedPictureUrl || msg.giftPictureUrl, msg.diamondCount, msg.repeatCount, msg.repeatEnd);
+          registerGift(msg.giftId, resolvedName, resolvedPictureUrl || msg.giftPictureUrl, msg.diamondCount, msg.repeatCount, msg.repeatEnd, msg.user);
         }
         break;
       case 'like':
@@ -831,7 +845,7 @@
   }
 
   /* ---------- Gift Gallery ---------- */
-  function registerGift(giftId, name, imageUrl, diamonds, count, repeatEnd) {
+  function registerGift(giftId, name, imageUrl, diamonds, count, repeatEnd, user) {
     if (!giftId && !name) return;
 
     const idStr = giftId ? String(giftId) : null;
@@ -875,7 +889,7 @@
     }
 
     const assignedSound = giftSounds[key];
-    if (assignedSound && repeatEnd !== false) {
+    if (assignedSound && repeatEnd !== false && shouldPlayGiftSound(user, giftId)) {
       playAlertSound(assignedSound);
     }
 
