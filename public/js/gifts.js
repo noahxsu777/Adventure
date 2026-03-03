@@ -1,5 +1,5 @@
 // TikTok Gift Catalog — auto-generated from antiops/tiktok-trending-data
-// Total: 1889 gifts with images
+// Total: 1891 gifts with images
 const GIFT_CATALOG = [
   { id: 35855, name: "$ANTANA KINGDOM", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/saliency_seg_1768299604649_0.45385b2f2237f9610958287d43239271.png~tplv-obj.webp" },
   { id: 42366, name: "1AM Crack", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/saliency_seg_1767949935225_0.29d9bc0859c199f9ee27d5a3fbe83e20.png~tplv-obj.webp" },
@@ -231,6 +231,8 @@ const GIFT_CATALOG = [
   { id: 41916, name: "Cap Flow", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/saliency_seg_1769563726810_0.ce16bf70343074350237364579137810.png~tplv-obj.webp" },
   { id: 50141, name: "Capesquad Mowgli", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/saliency_seg_1768567740619_0.9bc410aa4c9584894c6b26fee2a2141b.png~tplv-obj.webp" },
   { id: 18137, name: "Captured Vocals", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/73613a349fbac56473acd823675f5752.png~tplv-obj.webp" },
+  { id: 8217, name: "Capybara", image: "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/resource/553d899c4bd4be31e7b051bb36e842f8.webp" },
+  { id: 14488, name: "Capybara", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/6703facdac34caefbd0617a6321afe9b.png~tplv-obj.webp" },
   { id: 17490, name: "Capybara", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/6703facdac34caefbd0617a6321afe9b.png~tplv-obj.webp" },
   { id: 8086, name: "Car Drifting", image: "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/d214113a72527ce758ca79c1106f784d~tplv-obj.webp" },
   { id: 36435, name: "Carlos Smile", image: "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/saliency_seg_1769562665435_0.9afc0198ffbe9aa328d3b94d1841e8b5.png~tplv-obj.webp" },
