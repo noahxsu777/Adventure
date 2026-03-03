@@ -474,7 +474,7 @@ wss.on('connection', (ws) => {
                       });
                     }
                   } catch (emoErr) {
-                    console.log('Emoji list fetch failed (non-fatal):', emoErr.message);
+                    console.log('Emoji list fetch failed (non-fatal):', emoErr?.message || emoErr);
                   }
                 }
 
@@ -483,23 +483,28 @@ wss.on('connection', (ws) => {
                   broadcast(ws, 'fan_stickers', { stickers });
                 }
               } catch (stickerErr) {
-                console.log('Sticker extraction failed (non-fatal):', stickerErr.message);
+                console.log('Sticker extraction failed (non-fatal):', stickerErr?.message || stickerErr);
               }
             })
             .catch((err) => {
-              console.error('Connection failed:', err.message);
+              const rawMsg = err?.message || (typeof err === 'string' ? err : '');
+              console.error('Connection failed:', rawMsg || err);
 
               /* If enableExtendedGiftInfo caused a 403, retry without it */
-              if (extendedGiftInfo && (err.message || '').includes('403')) {
+              if (extendedGiftInfo && rawMsg.includes('403')) {
                 console.log('Extended gift info failed (403), retrying without it...');
                 createAndConnect(false);
                 return;
               }
 
               /* Translate known errors to Spanish */
-              let errorMsg = err.message;
+              let errorMsg = rawMsg || 'Error de conexión desconocido';
               if (UserOfflineError && err instanceof UserOfflineError) {
                 errorMsg = 'El usuario no está en LIVE :(';
+              } else if (/user.*not.*found/i.test(rawMsg)) {
+                errorMsg = 'Usuario no encontrado';
+              } else if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND/i.test(rawMsg)) {
+                errorMsg = 'Error de red, reintentando…';
               }
               broadcast(ws, 'error', { message: errorMsg });
               /* Auto-retry after failure unless user disconnected */
@@ -591,24 +596,28 @@ wss.on('connection', (ws) => {
             }
           });
 
-          /* Capture super-fan and barrage stickers as triggers */
+          /* Capture super-fan and barrage stickers as triggers (guard: events may not exist) */
           let sfCounter = 0;
-          connection.on(WebcastEvent.SUPER_FAN, (data) => {
-            const user = data.user?.uniqueId || 'unknown';
-            const imgs = extractImageUrls(data, 3);
-            imgs.forEach(({ id, url, label }) => {
-              if (url) broadcast(ws, 'emote', { user, emoteId: id || `sf_${++sfCounter}`, emoteImageUrl: url, label: label || 'SuperFan' });
+          if ('SUPER_FAN' in WebcastEvent) {
+            connection.on(WebcastEvent.SUPER_FAN, (data) => {
+              const user = data.user?.uniqueId || 'unknown';
+              const imgs = extractImageUrls(data, 3);
+              imgs.forEach(({ id, url, label }) => {
+                if (url) broadcast(ws, 'emote', { user, emoteId: id || `sf_${++sfCounter}`, emoteImageUrl: url, label: label || 'SuperFan' });
+              });
             });
-          });
+          }
 
           let barCounter = 0;
-          connection.on(WebcastEvent.BARRAGE, (data) => {
-            const user = data.user?.uniqueId || 'unknown';
-            const imgs = extractImageUrls(data, 3);
-            imgs.forEach(({ id, url, label }) => {
-              if (url) broadcast(ws, 'emote', { user, emoteId: id || `bar_${++barCounter}`, emoteImageUrl: url, label: label || 'Barrage' });
+          if ('BARRAGE' in WebcastEvent) {
+            connection.on(WebcastEvent.BARRAGE, (data) => {
+              const user = data.user?.uniqueId || 'unknown';
+              const imgs = extractImageUrls(data, 3);
+              imgs.forEach(({ id, url, label }) => {
+                if (url) broadcast(ws, 'emote', { user, emoteId: id || `bar_${++barCounter}`, emoteImageUrl: url, label: label || 'Barrage' });
+              });
             });
-          });
+          }
 
           /* Server-side auto-reconnect: keep connection alive */
           connection.on('disconnected', () => {
@@ -618,7 +627,7 @@ wss.on('connection', (ws) => {
           });
 
           connection.on('error', (err) => {
-            console.error(`TikTok error for ${username}:`, err.message);
+            console.error(`TikTok error for ${username}:`, err?.message || err);
           });
         }
 
