@@ -28,6 +28,8 @@
   const readSubsToggle  = $('#readSubsToggle');
   const readGiftsTTSToggle = $('#readGiftsTTSToggle');
   const playEachGiftInComboToggle = $('#playEachGiftInComboToggle');
+  const followSoundEnabledToggle = $('#followSoundEnabledToggle');
+  const followSoundSelect = $('#followSoundSelect');
 
   const ttsProvider     = $('#ttsProvider');
   const browserVoiceGroup = $('#browserVoiceGroup');
@@ -115,6 +117,8 @@
        - MyInstants URL prefixed with 'mi:' like 'mi:https://www.myinstants.com/media/sounds/...'
        - Uploaded sound prefixed with 'up:' like 'up:filename.mp3' */
   const giftSounds = {};
+  let followSound = '';
+  let followSoundEnabled = false;
 
   /* Load saved gift sound assignments from localStorage */
   try {
@@ -124,6 +128,16 @@
 
   function saveGiftSounds() {
     try { localStorage.setItem('giftSounds', JSON.stringify(giftSounds)); } catch {}
+  }
+  try {
+    followSound = localStorage.getItem('followSound') || '';
+    followSoundEnabled = localStorage.getItem('followSoundEnabled') === 'true';
+  } catch {}
+  function saveFollowSoundConfig() {
+    try {
+      localStorage.setItem('followSound', followSound || '');
+      localStorage.setItem('followSoundEnabled', String(!!followSoundEnabled));
+    } catch {}
   }
 
   /* Trigger (emote/sticker) registry and sound assignments */
@@ -547,17 +561,72 @@
     soundLibrary.appendChild(openBtn);
   }
 
+  function renderFollowSoundOptions() {
+    if (!followSoundSelect) return;
+    followSoundSelect.innerHTML = '';
+    const noOpt = document.createElement('option');
+    noOpt.value = '';
+    noOpt.textContent = 'No sound';
+    followSoundSelect.appendChild(noOpt);
+    if (cachedPopularSounds.length > 0) {
+      const popGroup = document.createElement('optgroup');
+      popGroup.label = '🔥 Popular';
+      cachedPopularSounds.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = 'mi:' + s.mp3;
+        opt.textContent = s.title;
+        popGroup.appendChild(opt);
+      });
+      followSoundSelect.appendChild(popGroup);
+    }
+    if (followSound && followSound.startsWith('mi:') && !cachedPopularSounds.some(s => 'mi:' + s.mp3 === followSound)) {
+      const customGroup = document.createElement('optgroup');
+      customGroup.label = '🌐 MyInstants';
+      const opt = document.createElement('option');
+      opt.value = followSound;
+      opt.textContent = `🔊 ${localStorage.getItem('miName:' + followSound) || 'Custom sound'}`;
+      customGroup.appendChild(opt);
+      followSoundSelect.appendChild(customGroup);
+    }
+    if (followSound && followSound.startsWith('up:')) {
+      const upGroup = document.createElement('optgroup');
+      upGroup.label = '📁 Uploaded';
+      const opt = document.createElement('option');
+      opt.value = followSound;
+      opt.textContent = uploadedSounds[followSound]?.name || followSound.replace(/^up:/, '');
+      upGroup.appendChild(opt);
+      followSoundSelect.appendChild(upGroup);
+    }
+    if (followSound) followSoundSelect.value = followSound;
+    if (followSoundEnabledToggle) followSoundEnabledToggle.checked = !!followSoundEnabled;
+  }
+
   /* Load popular sounds on startup */
-  loadPopularSounds();
+  loadPopularSounds().then(() => {
+    renderFollowSoundOptions();
+  });
 
   renderSoundLibrary();
   renderGiftGallery();
   renderTriggers();
+  renderFollowSoundOptions();
 
   /* Gift search filter */
   giftSearch.addEventListener('input', () => {
     renderGiftGallery(giftSearch.value);
   });
+  if (followSoundSelect) {
+    followSoundSelect.addEventListener('change', () => {
+      followSound = followSoundSelect.value || '';
+      saveFollowSoundConfig();
+    });
+  }
+  if (followSoundEnabledToggle) {
+    followSoundEnabledToggle.addEventListener('change', () => {
+      followSoundEnabled = !!followSoundEnabledToggle.checked;
+      saveFollowSoundConfig();
+    });
+  }
 
   /* ---------- TTS Provider switching ---------- */
   ttsProvider.addEventListener('change', () => {
@@ -727,6 +796,9 @@
         if (toggleFollow.checked) {
           appendMessage('follow', msg.user, 'followed!', msg.profilePictureUrl);
           enqueueTTS(msg.user, 'just followed!', 'follow');
+          if (followSoundEnabled && followSound) {
+            playAlertSound(followSound);
+          }
         }
         break;
       case 'emote':
