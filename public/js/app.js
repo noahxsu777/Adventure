@@ -27,6 +27,7 @@
   const readModsToggle  = $('#readModsToggle');
   const readSubsToggle  = $('#readSubsToggle');
   const readGiftsTTSToggle = $('#readGiftsTTSToggle');
+  const playEachGiftInComboToggle = $('#playEachGiftInComboToggle');
 
   const ttsProvider     = $('#ttsProvider');
   const browserVoiceGroup = $('#browserVoiceGroup');
@@ -159,8 +160,8 @@
 
   /* Dedup gift sounds: prevent same gift from playing sound twice within 3 seconds */
   const recentGiftSounds = {};
-  function shouldPlayGiftSound(user, giftId) {
-    const dedupKey = (user || '') + '_' + (giftId || '');
+  function shouldPlayGiftSound(user, giftId, repeatCount) {
+    const dedupKey = (user || '') + '_' + (giftId || '') + '_' + (repeatCount || 1);
     const now = Date.now();
     if (recentGiftSounds[dedupKey] && now - recentGiftSounds[dedupKey] < 3000) return false;
     recentGiftSounds[dedupKey] = now;
@@ -889,7 +890,8 @@
     }
 
     const assignedSound = giftSounds[key];
-    if (assignedSound && repeatEnd !== false && shouldPlayGiftSound(user, giftId)) {
+    const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? true : repeatEnd !== false;
+    if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, giftId, count)) {
       playAlertSound(assignedSound);
     }
 
