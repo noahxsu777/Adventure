@@ -795,7 +795,6 @@
       case 'follow':
         if (toggleFollow.checked) {
           appendMessage('follow', msg.user, 'followed!', msg.profilePictureUrl);
-          enqueueTTS(msg.user, 'just followed!', 'follow');
           if (followSoundEnabled && followSound) {
             playAlertSound(followSound);
           }
@@ -962,7 +961,8 @@
     }
 
     const assignedSound = giftSounds[key];
-    const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? true : repeatEnd !== false;
+    /* "Un solo sonidos en combo" ON => only play at combo end; OFF => play each increment */
+    const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? (repeatEnd !== false) : true;
     if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, giftId, count)) {
       playAlertSound(assignedSound);
     }
