@@ -11,6 +11,11 @@
   const disconnectBtn   = $('#disconnectBtn');
   const statusBadge     = $('#statusBadge');
   const chatMessages    = $('#chatMessages');
+  const musicPlayerCard = $('#musicPlayerCard');
+  const musicPlayerTitle = $('#musicPlayerTitle');
+  const musicPlayerRequester = $('#musicPlayerRequester');
+  const musicPlayerFrame = $('#musicPlayerFrame');
+  const musicPlayerClose = $('#musicPlayerClose');
 
   const toggleChat      = $('#toggleChat');
   const toggleGift      = $('#toggleGift');
@@ -707,6 +712,7 @@
     ttsQueue.length = 0;
     isSpeaking = false;
     renderQueue();
+    stopMusicPlayer();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -734,6 +740,36 @@
   }
 
   /* ---------- Event handler ---------- */
+  function parsePlayCommand(text) {
+    const m = String(text || '').trim().match(/^!play(?:\s+(.+))?$/i);
+    if (!m) return null;
+    return (m[1] || '').trim();
+  }
+
+  function playYouTubeSearch(query, user) {
+    if (!query) {
+      appendSystem('Uso: !play <nombre de la canción>');
+      return;
+    }
+    const src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
+    musicPlayerFrame.src = src;
+    musicPlayerTitle.textContent = `🎵 ${query}`;
+    musicPlayerRequester.textContent = user ? `Solicitada por @${user}` : '';
+    musicPlayerCard.classList.remove('hidden');
+  }
+
+  function stopMusicPlayer() {
+    if (!musicPlayerFrame) return;
+    musicPlayerFrame.src = '';
+    musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
+    musicPlayerRequester.textContent = '';
+    musicPlayerCard.classList.add('hidden');
+  }
+
+  if (musicPlayerClose) {
+    musicPlayerClose.addEventListener('click', stopMusicPlayer);
+  }
+
   function handleEvent(msg) {
     switch (msg.type) {
       case 'status':
@@ -755,6 +791,14 @@
         appendSystem(`Error: ${msg.message}`);
         break;
       case 'chat':
+        {
+          const playQuery = parsePlayCommand(msg.comment);
+          if (playQuery !== null) {
+            if (toggleChat.checked) appendMessage('chat', msg.user, msg.comment, msg.profilePictureUrl);
+            playYouTubeSearch(playQuery, msg.user);
+            return;
+          }
+        }
         if (toggleChat.checked) {
           appendMessage('chat', msg.user, msg.comment, msg.profilePictureUrl);
           enqueueTTS(msg.user, msg.comment, 'chat', msg.isModerator, msg.isSubscriber);

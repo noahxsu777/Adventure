@@ -55,6 +55,24 @@
         <label><input type="checkbox" id="toggleFollow" checked /><span class="chip">➕ Follows</span></label>
       </div>
     </div>
+    <div id="musicPlayerCard" class="music-player hidden">
+      <div class="music-player-head">
+        <div class="music-player-meta">
+          <div id="musicPlayerTitle" class="music-player-title">🎵 Reproductor YouTube</div>
+          <div id="musicPlayerRequester" class="music-player-requester"></div>
+        </div>
+        <button id="musicPlayerClose" class="music-player-close" type="button" aria-label="Cerrar reproductor">✕</button>
+      </div>
+      <iframe
+        id="musicPlayerFrame"
+        class="music-player-frame"
+        src=""
+        title="YouTube Music Player"
+        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+        allowfullscreen
+        referrerpolicy="strict-origin-when-cross-origin"
+      ></iframe>
+    </div>
     <div id="chatMessages"></div>
   </section>
 
