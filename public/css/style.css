@@ -112,6 +112,38 @@ body::after {
   min-width: 0;
 }
 
+.mode-toggle {
+  display: flex;
+  background: var(--surface2);
+  border-radius: 10px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  padding: 5px 9px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-dim);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mode-btn.active.premium-active {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
 .connect-bar input {
   padding: 8px 12px;
   border-radius: 10px;

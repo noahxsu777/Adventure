@@ -66,6 +66,24 @@
   const soundModalResults = $('#soundModalResults');
   const soundUploadInput  = $('#soundUploadInput');
 
+  /* Connection mode toggle */
+  const modeNormalBtn  = $('#modeNormalBtn');
+  const modePremiumBtn = $('#modePremiumBtn');
+  let connectionMode = 'normal';
+
+  modeNormalBtn.addEventListener('click', () => {
+    connectionMode = 'normal';
+    modeNormalBtn.classList.add('active');
+    modeNormalBtn.classList.remove('premium-active');
+    modePremiumBtn.classList.remove('active', 'premium-active');
+  });
+
+  modePremiumBtn.addEventListener('click', () => {
+    connectionMode = 'premium';
+    modePremiumBtn.classList.add('active', 'premium-active');
+    modeNormalBtn.classList.remove('active', 'premium-active');
+  });
+
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
@@ -73,6 +91,7 @@
   let ttsEnabled = true;
   let userDisconnected = false;
   let currentUsername = '';
+  let currentSessionMode = 'normal';
   let currentAudio = null;
   let reconnectAttempts = 0;
   const MAX_CHAT_ITEMS = 300;
@@ -663,8 +682,9 @@
   });
 
   /* ---------- WebSocket with exponential backoff reconnect ---------- */
-  function connectWs(username) {
+  function connectWs(username, mode) {
     currentUsername = username;
+    currentSessionMode = mode || connectionMode;
     userDisconnected = false;
     setStatus('connecting');
 
@@ -673,7 +693,7 @@
 
     ws.addEventListener('open', () => {
       reconnectAttempts = 0;
-      ws.send(JSON.stringify({ type: 'connect', username }));
+      ws.send(JSON.stringify({ type: 'connect', username, mode: mode || connectionMode }));
     });
 
     ws.addEventListener('message', (e) => {
@@ -689,7 +709,7 @@
         const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
         setTimeout(() => {
           if (!userDisconnected && currentUsername) {
-            connectWs(currentUsername);
+            connectWs(currentUsername, currentSessionMode);
           }
         }, delay);
       } else {
@@ -723,7 +743,7 @@
 
   function setStatus(s) {
     if (s === 'online') {
-      statusBadge.textContent = '● Live';
+      statusBadge.textContent = currentSessionMode === 'premium' ? '👑 Live Premium' : '● Live';
       statusBadge.className = 'badge badge-on';
     } else if (s === 'connecting') {
       statusBadge.textContent = 'Connecting…';
@@ -1568,7 +1588,7 @@
 
   connectBtn.addEventListener('click', () => {
     const u = usernameInput.value.trim();
-    if (u) connectWs(u);
+    if (u) connectWs(u, connectionMode);
   });
 
   usernameInput.addEventListener('keydown', (e) => {

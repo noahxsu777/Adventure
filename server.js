@@ -1,6 +1,6 @@
 const express = require('express');
 const http = require('http');
-const { WebSocketServer } = require('ws');
+const { WebSocketServer, WebSocket } = require('ws');
 const sharp = require('sharp');
 const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
@@ -362,9 +362,111 @@ app.get('/api/sounds/play', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+const TIKTOOLS_API_KEY = process.env.TIKTOOLS_API_KEY || 'tk_235e481d7e949fa580b3f0b3bf8040223481c16e398d2abb';
 
 /** Track active TikTok connections per WebSocket client */
 const clients = new Map();
+
+/* ============================================================
+   Premium connection via tik.tools — persistent WebSocket
+   ============================================================ */
+function connectPremium(ws, username) {
+  let reconnectDelay = 5000;
+  const MAX_DELAY = 60000;
+
+  function openTikTools() {
+    const tikUrl = `wss://api.tik.tools?uniqueId=${encodeURIComponent(username)}&apiKey=${TIKTOOLS_API_KEY}`;
+    const tikWs = new WebSocket(tikUrl);
+    clients.set(ws, { tikWs, username, reconnectTimer: null, mode: 'premium' });
+
+    tikWs.on('open', () => {
+      console.log(`[Premium] Connected to tik.tools for ${username}`);
+      reconnectDelay = 5000;
+      broadcast(ws, 'connected', { username, mode: 'premium' });
+    });
+
+    tikWs.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+
+      const event = msg.event || msg.type;
+      const data = msg.data || {};
+      const user = data.user || {};
+
+      switch (event) {
+        case 'chat':
+          broadcast(ws, 'chat', {
+            user: user.uniqueId || 'unknown',
+            nickname: user.nickname || '',
+            comment: data.comment || '',
+            profilePictureUrl: user.profilePictureUrl || '',
+            isModerator: user.isModerator || false,
+            isSubscriber: user.isSubscriber || false
+          });
+          break;
+        case 'gift':
+          broadcast(ws, 'gift', {
+            user: user.uniqueId || 'unknown',
+            nickname: user.nickname || '',
+            giftId: data.giftId || 0,
+            giftName: data.giftName || `Gift #${data.giftId || 0}`,
+            giftPictureUrl: data.giftPictureUrl || '',
+            diamondCount: data.diamondCount || 0,
+            repeatCount: data.repeatCount || 1,
+            repeatEnd: data.repeatEnd ?? true,
+            profilePictureUrl: user.profilePictureUrl || ''
+          });
+          break;
+        case 'like':
+          broadcast(ws, 'like', {
+            user: user.uniqueId || 'unknown',
+            nickname: user.nickname || '',
+            likeCount: data.likeCount || data.totalLikes || 1,
+            profilePictureUrl: user.profilePictureUrl || ''
+          });
+          break;
+        case 'follow':
+          broadcast(ws, 'follow', {
+            user: user.uniqueId || 'unknown',
+            nickname: user.nickname || '',
+            profilePictureUrl: user.profilePictureUrl || ''
+          });
+          break;
+        case 'member':
+          broadcast(ws, 'member', {
+            user: user.uniqueId || 'unknown',
+            nickname: user.nickname || '',
+            profilePictureUrl: user.profilePictureUrl || ''
+          });
+          break;
+        case 'roomUserSeq':
+          broadcast(ws, 'roomUserSeq', { viewerCount: data.viewerCount || 0 });
+          break;
+        case 'error':
+          broadcast(ws, 'error', { message: data.message || 'tik.tools error' });
+          break;
+      }
+    });
+
+    tikWs.on('close', () => {
+      const entry = clients.get(ws);
+      if (!entry) return;
+      console.log(`[Premium] tik.tools disconnected for ${username}, reconnecting in ${reconnectDelay / 1000}s…`);
+      broadcast(ws, 'tiktok_reconnecting', { message: 'Reconectando conexión premium…' });
+      entry.reconnectTimer = setTimeout(() => {
+        if (!clients.has(ws)) return;
+        reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_DELAY);
+        openTikTools();
+      }, reconnectDelay);
+    });
+
+    tikWs.on('error', (err) => {
+      console.error(`[Premium] tik.tools error for ${username}:`, err?.message || err);
+    });
+  }
+
+  openTikTools();
+}
 
 /**
  * Recursively scan an object for image URLs (stickers/emotes/badges).
@@ -407,6 +509,7 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'connect') {
       const username = (msg.username || '').trim();
+      const mode = msg.mode === 'premium' ? 'premium' : 'normal';
       if (!username) {
         broadcast(ws, 'error', { message: 'Username is required' });
         return;
@@ -416,8 +519,17 @@ wss.on('connection', (ws) => {
       const prev = clients.get(ws);
       if (prev) {
         if (prev.reconnectTimer) clearTimeout(prev.reconnectTimer);
-        try { prev.connection.disconnect(); } catch {}
+        if (prev.mode === 'premium') {
+          try { prev.tikWs.close(); } catch {}
+        } else {
+          try { prev.connection.disconnect(); } catch {}
+        }
         clients.delete(ws);
+      }
+
+      if (mode === 'premium') {
+        connectPremium(ws, username);
+        return;
       }
 
       import('tiktok-live-connector').then(({ TikTokLiveConnection, WebcastEvent, UserOfflineError }) => {
@@ -660,7 +772,11 @@ wss.on('connection', (ws) => {
       const entry = clients.get(ws);
       if (entry) {
         if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-        try { entry.connection.disconnect(); } catch {}
+        if (entry.mode === 'premium') {
+          try { entry.tikWs.close(); } catch {}
+        } else {
+          try { entry.connection.disconnect(); } catch {}
+        }
         clients.delete(ws);
         broadcast(ws, 'disconnected', { message: 'Disconnected by user' });
       }
@@ -671,7 +787,11 @@ wss.on('connection', (ws) => {
     const entry = clients.get(ws);
     if (entry) {
       if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-      try { entry.connection.disconnect(); } catch {}
+      if (entry.mode === 'premium') {
+        try { entry.tikWs.close(); } catch {}
+      } else {
+        try { entry.connection.disconnect(); } catch {}
+      }
       clients.delete(ws);
     }
     console.log('Client disconnected');
