@@ -355,6 +355,34 @@ app.get('/api/gifts/catalog', async (_req, res) => {
   }
 });
 
+/* Cloud save/load user sound configurations */
+const configStore = {};
+
+app.post('/api/config/save', (req, res) => {
+  const { username, giftSounds, triggerSounds, followSound, followSoundEnabled } = req.body;
+  if (!username || typeof username !== 'string' || username.length > 100) {
+    return res.status(400).json({ error: 'Valid username required' });
+  }
+  const key = username.toLowerCase().replace(/^@/, '').trim();
+  if (!key) return res.status(400).json({ error: 'Valid username required' });
+  configStore[key] = {
+    giftSounds: giftSounds || {},
+    triggerSounds: triggerSounds || {},
+    followSound: followSound || '',
+    followSoundEnabled: !!followSoundEnabled,
+    savedAt: Date.now()
+  };
+  console.log(`[Config] Saved config for @${key}`);
+  res.json({ ok: true, username: key, savedAt: configStore[key].savedAt });
+});
+
+app.get('/api/config/load/:username', (req, res) => {
+  const key = (req.params.username || '').toLowerCase().replace(/^@/, '').trim();
+  const config = configStore[key];
+  if (!config) return res.status(404).json({ error: 'No config found for this username' });
+  res.json(config);
+});
+
 /* Proxy MyInstants MP3 to avoid CORS */
 app.get('/api/sounds/play', async (req, res) => {
   const { url } = req.query;
@@ -399,6 +427,7 @@ const clients = new Map();
 function connectPremium(ws, username) {
   let reconnectDelay = 5000;
   const MAX_DELAY = 60000;
+  const recentPremiumGifts = {};
 
   function openTikTools() {
     const tikUrl = `wss://api.tik.tools?uniqueId=${encodeURIComponent(username)}&apiKey=${TIKTOOLS_API_KEY}`;
@@ -430,7 +459,14 @@ function connectPremium(ws, username) {
             isSubscriber: user.isSubscriber || false
           });
           break;
-        case 'gift':
+        case 'gift': {
+          const gDedupKey = `${user.uniqueId}_${data.giftId}_${data.repeatCount || 1}`;
+          const gNow = Date.now();
+          if (recentPremiumGifts[gDedupKey] && gNow - recentPremiumGifts[gDedupKey] < 3000) break;
+          recentPremiumGifts[gDedupKey] = gNow;
+          for (const k in recentPremiumGifts) {
+            if (gNow - recentPremiumGifts[k] > 6000) delete recentPremiumGifts[k];
+          }
           broadcast(ws, 'gift', {
             user: user.uniqueId || 'unknown',
             nickname: user.nickname || '',
@@ -443,6 +479,7 @@ function connectPremium(ws, username) {
             profilePictureUrl: user.profilePictureUrl || ''
           });
           break;
+        }
         case 'like':
           broadcast(ws, 'like', {
             user: user.uniqueId || 'unknown',
@@ -623,6 +660,33 @@ wss.on('connection', (ws) => {
               } catch (stickerErr) {
                 console.log('Sticker extraction failed (non-fatal):', stickerErr?.message || stickerErr);
               }
+
+              /* ── Fetch live gift catalog from TikTok WebCast API ── */
+              try {
+                const axios = connection.webClient?.axiosInstance;
+                if (axios && state.roomId) {
+                  const giftResp = await axios.get('https://webcast.tiktok.com/webcast/gift/list/', {
+                    params: { aid: '1988', room_id: state.roomId },
+                    timeout: 6000
+                  });
+                  const giftData = giftResp?.data?.data || giftResp?.data;
+                  const rawGifts = giftData?.gifts || giftData?.gift_list || giftData?.giftList || [];
+                  if (Array.isArray(rawGifts) && rawGifts.length > 0) {
+                    const gifts = rawGifts.map(g => ({
+                      id: g.id,
+                      name: g.name,
+                      image: g.image?.url_list?.[0] || g.image?.url?.[0] || g.icon?.url_list?.[0] || '',
+                      diamonds: g.diamond_count ?? g.diamondCount ?? 0
+                    })).filter(g => g.id && g.name);
+                    if (gifts.length > 0) {
+                      console.log(`Found ${gifts.length} live gifts for ${username}`);
+                      broadcast(ws, 'gift_catalog', { gifts });
+                    }
+                  }
+                }
+              } catch (giftErr) {
+                console.log('Live gift catalog fetch failed (non-fatal):', giftErr?.message || giftErr);
+              }
             })
             .catch((err) => {
               const rawMsg = err?.message || (typeof err === 'string' ? err : '');
@@ -660,17 +724,26 @@ wss.on('connection', (ws) => {
             });
           });
 
-          /* Dedup: prevent broadcasting duplicate gift events within 2s window */
+          /* Dedup: prevent broadcasting duplicate gift events within 4s window.
+             Uses both giftId and giftName keys because TikTok sometimes sends a
+             placeholder event with giftId=0 followed by the real event. */
           const recentGifts = {};
           connection.on(WebcastEvent.GIFT, (data) => {
-            const dedupKey = `${data.user?.uniqueId}_${data.giftId}_${data.repeatCount}`;
+            const giftKey = data.giftId || data.giftName || 'unknown';
+            const dedupKey = `${data.user?.uniqueId}_${giftKey}_${data.repeatCount}`;
+            const nameDedupKey = `${data.user?.uniqueId}_name_${data.giftName}_${data.repeatCount}`;
             const now = Date.now();
-            if (recentGifts[dedupKey] && now - recentGifts[dedupKey] < 2000) return;
+            if ((recentGifts[dedupKey] && now - recentGifts[dedupKey] < 4000) ||
+                (recentGifts[nameDedupKey] && now - recentGifts[nameDedupKey] < 4000)) return;
             recentGifts[dedupKey] = now;
+            recentGifts[nameDedupKey] = now;
             /* Cleanup old entries */
             for (const k in recentGifts) {
-              if (now - recentGifts[k] > 5000) delete recentGifts[k];
+              if (now - recentGifts[k] > 8000) delete recentGifts[k];
             }
+
+            /* repeatEnd from proto is a number: 0 = ongoing, 1 = finished */
+            const repeatEndBool = data.repeatEnd == null ? true : !!data.repeatEnd;
 
             broadcast(ws, 'gift', {
               user: data.user?.uniqueId || 'unknown',
@@ -680,7 +753,7 @@ wss.on('connection', (ws) => {
               giftPictureUrl: data.giftPictureUrl || '',
               diamondCount: data.diamondCount || 0,
               repeatCount: data.repeatCount || 1,
-              repeatEnd: data.repeatEnd ?? true,
+              repeatEnd: repeatEndBool,
               profilePictureUrl: data.user?.profilePictureUrl || ''
             });
           });
@@ -822,7 +895,19 @@ wss.on('connection', (ws) => {
     }
     console.log('Client disconnected');
   });
+
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.isAlive = true;
 });
+
+/* WebSocket heartbeat — terminates stale connections (mobile background kills WS silently) */
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 25000);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
