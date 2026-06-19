@@ -724,17 +724,26 @@ wss.on('connection', (ws) => {
             });
           });
 
-          /* Dedup: prevent broadcasting duplicate gift events within 2s window */
+          /* Dedup: prevent broadcasting duplicate gift events within 4s window.
+             Uses both giftId and giftName keys because TikTok sometimes sends a
+             placeholder event with giftId=0 followed by the real event. */
           const recentGifts = {};
           connection.on(WebcastEvent.GIFT, (data) => {
-            const dedupKey = `${data.user?.uniqueId}_${data.giftId}_${data.repeatCount}`;
+            const giftKey = data.giftId || data.giftName || 'unknown';
+            const dedupKey = `${data.user?.uniqueId}_${giftKey}_${data.repeatCount}`;
+            const nameDedupKey = `${data.user?.uniqueId}_name_${data.giftName}_${data.repeatCount}`;
             const now = Date.now();
-            if (recentGifts[dedupKey] && now - recentGifts[dedupKey] < 2000) return;
+            if ((recentGifts[dedupKey] && now - recentGifts[dedupKey] < 4000) ||
+                (recentGifts[nameDedupKey] && now - recentGifts[nameDedupKey] < 4000)) return;
             recentGifts[dedupKey] = now;
+            recentGifts[nameDedupKey] = now;
             /* Cleanup old entries */
             for (const k in recentGifts) {
-              if (now - recentGifts[k] > 5000) delete recentGifts[k];
+              if (now - recentGifts[k] > 8000) delete recentGifts[k];
             }
+
+            /* repeatEnd from proto is a number: 0 = ongoing, 1 = finished */
+            const repeatEndBool = data.repeatEnd == null ? true : !!data.repeatEnd;
 
             broadcast(ws, 'gift', {
               user: data.user?.uniqueId || 'unknown',
@@ -744,7 +753,7 @@ wss.on('connection', (ws) => {
               giftPictureUrl: data.giftPictureUrl || '',
               diamondCount: data.diamondCount || 0,
               repeatCount: data.repeatCount || 1,
-              repeatEnd: data.repeatEnd ?? true,
+              repeatEnd: repeatEndBool,
               profilePictureUrl: data.user?.profilePictureUrl || ''
             });
           });

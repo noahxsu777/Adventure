@@ -130,18 +130,35 @@ body::after {
   cursor: pointer;
   background: transparent;
   color: var(--text-dim);
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
   white-space: nowrap;
+}
+
+.mode-btn:active {
+  transform: scale(0.94);
 }
 
 .mode-btn.active {
   background: var(--accent);
   color: #fff;
+  animation: modeActivate 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .mode-btn.active.premium-active {
   background: linear-gradient(135deg, #f59e0b, #d97706);
   color: #fff;
+  animation: modeActivate 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), premiumGlow 2.2s ease-in-out 0.4s infinite;
+}
+
+@keyframes modeActivate {
+  0%   { transform: scale(0.85); }
+  55%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes premiumGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.35); }
+  50%      { box-shadow: 0 0 16px rgba(245, 158, 11, 0.85); }
 }
 
 .connect-bar input {
@@ -171,14 +188,29 @@ body::after {
   flex-shrink: 0;
 }
 
+.connect-bar button:active {
+  transform: scale(0.95);
+}
+
 #connectBtn {
   background: var(--accent);
   color: #fff;
+  transition: transform 0.15s ease, filter 0.2s ease;
+}
+
+#connectBtn:hover {
+  filter: brightness(1.1);
 }
 
 #disconnectBtn {
   background: var(--surface2);
   color: var(--text);
+  animation: btnSlideIn 0.3s ease;
+}
+
+@keyframes btnSlideIn {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 .badge {
@@ -192,11 +224,22 @@ body::after {
 }
 
 .badge-off  { background: var(--surface2); color: var(--text-dim); }
-.badge-on   { background: var(--success); color: #000; }
-.badge-connecting { background: var(--accent); color: #fff; animation: badgePulse 1.5s ease infinite; }
+.badge-on   { background: var(--success); color: #000; animation: connectedPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), livePulse 2s ease-in-out 0.5s infinite; }
+.badge-connecting { background: var(--accent); color: #fff; animation: badgePulse 1.2s ease infinite; }
 .badge-sm   { font-size: 0.65rem; padding: 2px 6px; background: var(--accent); color: #fff; }
 
-@keyframes badgePulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@keyframes badgePulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+@keyframes connectedPop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.18); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.5); }
+  50%      { box-shadow: 0 0 0 5px rgba(48, 209, 88, 0); }
+}
 
 /* ============================================================
    Tab Navigation – iOS tab bar style
@@ -1172,6 +1215,53 @@ body::after {
   }
   .ela-banner-text { font-size: 0.8rem; }
   .ela-banner-subtext { font-size: 0.64rem; }
+}
+
+/* ============================================================
+   Responsive header — stack connection controls on mobile
+   ============================================================ */
+@media (max-width: 640px) {
+  #header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: calc(var(--safe-top) + 8px) 12px 10px;
+  }
+
+  .connect-bar {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 8px;
+    row-gap: 8px;
+  }
+
+  /* Mode toggle = full-width row, buttons split 50/50 */
+  .mode-toggle {
+    order: -1;
+    width: 100%;
+  }
+
+  .mode-btn {
+    flex: 1 1 0;
+    padding: 9px 6px;
+    font-size: 0.82rem;
+    text-align: center;
+  }
+
+  /* Username input takes the remaining space on its own row */
+  .connect-bar input {
+    flex: 1 1 140px;
+    font-size: 0.9rem;
+    padding: 10px 12px;
+  }
+
+  .connect-bar button {
+    padding: 10px 16px;
+    font-size: 0.85rem;
+  }
+
+  #statusBadge {
+    margin-left: auto;
+  }
 }
 
 /* ============================================================

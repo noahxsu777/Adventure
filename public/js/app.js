@@ -196,15 +196,19 @@
   let soundModalGiftId = null;
   let soundModalTriggerId = null;
 
-  /* Dedup gift sounds: prevent same registry entry from playing twice within 4 seconds */
+  /* Dedup gift sounds: prevent same gift from playing twice within 5 seconds.
+     Checks both registry key and gift name to catch giftId=0 → real ID transitions. */
   const recentGiftSounds = {};
-  function shouldPlayGiftSound(user, registryKey, repeatCount) {
-    const dedupKey = String(user || '') + '_' + String(registryKey || '') + '_' + String(Math.max(repeatCount || 0, 1));
+  function shouldPlayGiftSound(user, registryKey, repeatCount, giftName) {
     const now = Date.now();
-    if (recentGiftSounds[dedupKey] && now - recentGiftSounds[dedupKey] < 4000) return false;
-    recentGiftSounds[dedupKey] = now;
+    const regKey = String(user || '') + '_' + String(registryKey || '') + '_' + String(Math.max(repeatCount || 0, 1));
+    const nameKey = giftName ? String(user || '') + '_name_' + String(giftName) + '_' + String(Math.max(repeatCount || 0, 1)) : null;
+    if (recentGiftSounds[regKey] && now - recentGiftSounds[regKey] < 5000) return false;
+    if (nameKey && recentGiftSounds[nameKey] && now - recentGiftSounds[nameKey] < 5000) return false;
+    recentGiftSounds[regKey] = now;
+    if (nameKey) recentGiftSounds[nameKey] = now;
     for (const k in recentGiftSounds) {
-      if (now - recentGiftSounds[k] > 6000) delete recentGiftSounds[k];
+      if (now - recentGiftSounds[k] > 8000) delete recentGiftSounds[k];
     }
     return true;
   }
@@ -342,7 +346,7 @@
     .catch(() => {});
 
   function saveLearnedGifts() {
-    /* Save non-catalog gifts that have an image (learned from live events) */
+    /* Save non-catalog gifts that have an image (learned from live events or tik.tools API) */
     const learned = {};
     Object.entries(giftRegistry).forEach(([key, g]) => {
       if (!key.startsWith('catalog_') && g.imageUrl) {
@@ -1142,9 +1146,11 @@
     }
 
     const assignedSound = giftSounds[key];
-    /* "Un solo sonidos en combo" ON => only play at combo end; OFF => play each increment */
-    const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? (repeatEnd !== false) : true;
-    if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, key, count)) {
+    /* "Un solo sonidos en combo" ON => only play at combo end; OFF => play each increment.
+       repeatEnd is boolean (true=finished). Use !!repeatEnd to handle numeric 0/1 values. */
+    const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? !!repeatEnd : true;
+    const giftDisplayName = giftRegistry[key]?.name || name;
+    if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, key, count, giftDisplayName)) {
       enqueueAlertSound(assignedSound);
     }
 
