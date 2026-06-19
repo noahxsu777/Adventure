@@ -1,13 +1,13 @@
-# fly.toml app configuration file generated for adventure-8t03kq on 2026-02-08T17:02:17Z
+# fly.toml app configuration file generated for live777 on 2026-06-19T04:59:27Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'lively777'
+app = 'live777'
 primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [http_service]
   internal_port = 8080
