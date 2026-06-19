@@ -220,6 +220,72 @@
     }
   }
 
+  /* Alert sound queue — plays assigned sounds sequentially (no overlap) */
+  const alertSoundQueue = [];
+  let alertQueueActive = false;
+  let queueAudio = null;
+
+  function enqueueAlertSound(soundId) {
+    if (!soundId) return;
+    alertSoundQueue.push(soundId);
+    if (!alertQueueActive) processAlertQueue();
+  }
+
+  function processAlertQueue() {
+    if (alertQueueActive || alertSoundQueue.length === 0) return;
+    alertQueueActive = true;
+    const soundId = alertSoundQueue.shift();
+    playAlertSoundRaw(soundId, () => {
+      alertQueueActive = false;
+      processAlertQueue();
+    });
+  }
+
+  function playAlertSoundRaw(soundId, onDone) {
+    if (!soundId) { onDone && onDone(); return; }
+
+    if (soundId.startsWith('up:')) {
+      const entry = uploadedSounds[soundId];
+      if (!entry) { onDone && onDone(); return; }
+      const audio = new Audio(entry.dataUrl);
+      audio.volume = parseFloat(volumeSlider.value);
+      queueAudio = audio;
+      const finish = () => { if (queueAudio === audio) queueAudio = null; onDone && onDone(); };
+      audio.addEventListener('ended', finish);
+      audio.addEventListener('error', finish);
+      audio.play().catch(finish);
+      return;
+    }
+
+    if (soundId.startsWith('mi:')) {
+      const mp3Url = soundId.slice(3);
+      const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(mp3Url)}`;
+      const audio = new Audio(proxyUrl);
+      audio.volume = parseFloat(volumeSlider.value);
+      queueAudio = audio;
+      const finish = () => { if (queueAudio === audio) queueAudio = null; onDone && onDone(); };
+      audio.addEventListener('ended', finish);
+      audio.addEventListener('error', finish);
+      audio.play().catch(finish);
+      return;
+    }
+
+    const s = ALERT_SOUNDS.find(a => a.id === soundId);
+    if (!s) { onDone && onDone(); return; }
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = s.type;
+    osc.frequency.value = s.freq;
+    gain.gain.setValueAtTime(parseFloat(volumeSlider.value) * 0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + s.dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + s.dur);
+    setTimeout(onDone, s.dur * 1000 + 50);
+  }
+
   /* Pre-populate gallery from static catalog (loaded from gifts.js) */
   /* Name → key lookup for O(1) matching during live events */
   const giftNameIndex = {};
@@ -227,7 +293,7 @@
   if (typeof GIFT_CATALOG !== 'undefined') {
     GIFT_CATALOG.forEach((g, i) => {
       const key = 'catalog_' + i;
-      giftRegistry[key] = { name: g.name, imageUrl: g.image, diamonds: 0, count: 0 };
+      giftRegistry[key] = { name: g.name, imageUrl: g.image, diamonds: 0, count: 0, giftId: g.id || null };
       giftNameIndex[g.name.toLowerCase()] = key;
       if (g.id) giftIdIndex[String(g.id)] = key;
     });
@@ -240,7 +306,7 @@
       const parsed = JSON.parse(learned);
       Object.entries(parsed).forEach(([gid, g]) => {
         if (!giftRegistry[gid]) {
-          giftRegistry[gid] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds || 0, count: 0 };
+          giftRegistry[gid] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds || 0, count: 0, giftId: g.giftId || gid };
         }
         if (g.imageUrl && giftRegistry[gid] && !giftRegistry[gid].imageUrl) {
           giftRegistry[gid].imageUrl = g.imageUrl;
@@ -250,12 +316,38 @@
       });
     }
   } catch {}
+
+  /* Enrich catalog from tik.tools API — adds gifts not in the static list */
+  fetch('/api/gifts/catalog')
+    .then(r => r.json())
+    .then(apiGifts => {
+      if (!Array.isArray(apiGifts) || apiGifts.length === 0) return;
+      let added = 0;
+      apiGifts.forEach(g => {
+        if (!g.id) return;
+        const idStr = String(g.id);
+        if (!giftIdIndex[idStr]) {
+          const key = 'tiktools_' + idStr;
+          giftRegistry[key] = { name: g.name, imageUrl: g.image || '', diamonds: g.diamonds || 0, count: 0, giftId: g.id };
+          giftIdIndex[idStr] = key;
+          if (g.name) giftNameIndex[g.name.toLowerCase()] = key;
+          added++;
+        } else {
+          const key = giftIdIndex[idStr];
+          if (g.image && !giftRegistry[key].imageUrl) giftRegistry[key].imageUrl = g.image;
+          if (g.diamonds && !giftRegistry[key].diamonds) giftRegistry[key].diamonds = g.diamonds;
+        }
+      });
+      if (added > 0) renderGiftGallery(giftSearch ? giftSearch.value : '');
+    })
+    .catch(() => {});
+
   function saveLearnedGifts() {
     /* Save non-catalog gifts that have an image (learned from live events) */
     const learned = {};
     Object.entries(giftRegistry).forEach(([key, g]) => {
       if (!key.startsWith('catalog_') && g.imageUrl) {
-        learned[key] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds };
+        learned[key] = { name: g.name, imageUrl: g.imageUrl, diamonds: g.diamonds, giftId: g.giftId };
       }
     });
     try { localStorage.setItem('learnedGifts', JSON.stringify(learned)); } catch {}
@@ -282,14 +374,14 @@
     return audioCtx;
   }
 
+  /* playAlertSound — immediate preview playback (for test/preview buttons, stops current preview) */
   function playAlertSound(soundId) {
     if (!soundId) return;
+    stopPreview();
 
-    /* Uploaded sound (data URL prefixed with 'up:') */
     if (soundId.startsWith('up:')) {
       const entry = uploadedSounds[soundId];
       if (!entry) return;
-      stopPreview();
       const audio = new Audio(entry.dataUrl);
       audio.volume = parseFloat(volumeSlider.value);
       currentPreviewAudio = audio;
@@ -298,11 +390,9 @@
       return;
     }
 
-    /* MyInstants sound (URL prefixed with 'mi:') */
     if (soundId.startsWith('mi:')) {
       const mp3Url = soundId.slice(3);
       const proxyUrl = `/api/sounds/play?url=${encodeURIComponent(mp3Url)}`;
-      stopPreview();
       const audio = new Audio(proxyUrl);
       audio.volume = parseFloat(volumeSlider.value);
       currentPreviewAudio = audio;
@@ -311,7 +401,6 @@
       return;
     }
 
-    /* Built-in oscillator sound */
     const s = ALERT_SOUNDS.find(a => a.id === soundId);
     if (!s) return;
     const ctx = getAudioCtx();
@@ -335,6 +424,12 @@
       btn.classList.add('active');
       const target = document.getElementById(btn.dataset.tab);
       if (target) target.classList.add('active');
+      if (btn.dataset.tab === 'soundsTab') {
+        /* Auto-fill username and refresh sounds list when tab opens */
+        const cloudInput = $('#cloudUsernameInput');
+        if (cloudInput && currentUsername && !cloudInput.value) cloudInput.value = currentUsername;
+        renderSoundsTab();
+      }
     });
   });
 
@@ -860,12 +955,35 @@
         if (toggleFollow.checked) {
           appendMessage('follow', msg.user, 'followed!', msg.profilePictureUrl);
           if (followSoundEnabled && followSound) {
-            playAlertSound(followSound);
+            enqueueAlertSound(followSound);
           }
         }
         break;
       case 'emote':
         registerTrigger(msg.emoteId, msg.emoteImageUrl, msg.user);
+        break;
+      case 'gift_catalog':
+        /* Live gift catalog from /webcast/gifts — enrich gallery */
+        if (Array.isArray(msg.gifts)) {
+          let liveAdded = 0;
+          msg.gifts.forEach(g => {
+            if (!g.id) return;
+            const idStr = String(g.id);
+            if (!giftIdIndex[idStr]) {
+              const key = 'live_' + idStr;
+              giftRegistry[key] = { name: g.name, imageUrl: g.image || '', diamonds: g.diamonds || 0, count: 0, giftId: g.id };
+              giftIdIndex[idStr] = key;
+              if (g.name) giftNameIndex[g.name.toLowerCase()] = key;
+              liveAdded++;
+            } else {
+              const key = giftIdIndex[idStr];
+              if (g.image && !giftRegistry[key].imageUrl) giftRegistry[key].imageUrl = g.image;
+              if (g.diamonds && !giftRegistry[key].diamonds) giftRegistry[key].diamonds = g.diamonds;
+              if (!giftRegistry[key].giftId) giftRegistry[key].giftId = g.id;
+            }
+          });
+          if (liveAdded > 0) renderGiftGallery(giftSearch ? giftSearch.value : '');
+        }
         break;
       case 'fan_stickers':
         /* Pre-populate triggers from stickers found on connect */
@@ -1003,7 +1121,7 @@
     /* 4. Create new entry for unknown gift */
     if (!key) {
       key = idStr || ('unknown_' + (name || Date.now()));
-      giftRegistry[key] = { name: name || `Gift #${giftId}`, imageUrl: imageUrl || '', diamonds: diamonds || 0, count: 0 };
+      giftRegistry[key] = { name: name || `Gift #${giftId}`, imageUrl: imageUrl || '', diamonds: diamonds || 0, count: 0, giftId: idStr ? Number(idStr) || idStr : null };
     }
 
     /* Update existing entry with live data */
@@ -1028,7 +1146,7 @@
     /* "Un solo sonidos en combo" ON => only play at combo end; OFF => play each increment */
     const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? (repeatEnd !== false) : true;
     if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, giftId, count)) {
-      playAlertSound(assignedSound);
+      enqueueAlertSound(assignedSound);
     }
 
     renderGiftGallery(giftSearch.value);
@@ -1071,6 +1189,13 @@
       nameDiv.className = 'gift-card-name';
       nameDiv.textContent = g.name;
       card.appendChild(nameDiv);
+
+      if (g.giftId != null) {
+        const idDiv = document.createElement('div');
+        idDiv.className = 'gift-card-id';
+        idDiv.textContent = `ID: ${g.giftId}`;
+        card.appendChild(idDiv);
+      }
 
       if (g.diamonds) {
         const diamDiv = document.createElement('div');
@@ -1192,7 +1317,7 @@
     saveTriggerRegistry();
     /* Play assigned sound */
     const assignedSound = triggerSounds[key];
-    if (assignedSound) playAlertSound(assignedSound);
+    if (assignedSound) enqueueAlertSound(assignedSound);
     renderTriggers();
   }
 
@@ -1307,7 +1432,182 @@
     });
   }
 
-  /* Load all available TikTok gifts from the API into the gallery */
+  /* ---------- Sounds Tab ---------- */
+  function getSoundDisplayName(soundId) {
+    if (!soundId) return '';
+    if (soundId.startsWith('mi:')) {
+      return localStorage.getItem('miName:' + soundId) || 'MyInstants Sound';
+    }
+    if (soundId.startsWith('up:')) {
+      return uploadedSounds[soundId]?.name || soundId.replace(/^up:\d+_/, '');
+    }
+    const s = ALERT_SOUNDS.find(a => a.id === soundId);
+    return s ? s.name : soundId;
+  }
+
+  function renderSoundsTab() {
+    const list = $('#soundsTabList');
+    if (!list) return;
+
+    const entries = [];
+
+    Object.entries(giftSounds).forEach(([key, soundId]) => {
+      const g = giftRegistry[key];
+      if (!g || !soundId) return;
+      entries.push({ type: 'gift', key, soundId, name: g.name, imageUrl: g.imageUrl, giftId: g.giftId });
+    });
+
+    Object.entries(triggerSounds).forEach(([key, soundId]) => {
+      const t = triggerRegistry[key];
+      if (!soundId) return;
+      entries.push({ type: 'trigger', key, soundId, name: t?.label || `Emote #${key}`, imageUrl: t?.emoteImageUrl });
+    });
+
+    if (entries.length === 0) {
+      list.innerHTML = '<div class="gift-empty">No hay sonidos configurados. Ve a la pestaña 🎁 Gifts para asignar sonidos.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    entries.forEach(({ type, key, soundId, name, imageUrl, giftId }) => {
+      const row = document.createElement('div');
+      row.className = 'sounds-tab-row';
+
+      if (imageUrl) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.alt = name;
+        img.className = 'sounds-tab-img';
+        img.onerror = function () { this.style.display = 'none'; };
+        row.appendChild(img);
+      } else {
+        const ph = document.createElement('div');
+        ph.className = 'sounds-tab-placeholder';
+        ph.textContent = type === 'gift' ? '🎁' : '🎭';
+        row.appendChild(ph);
+      }
+
+      const info = document.createElement('div');
+      info.className = 'sounds-tab-info';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'sounds-tab-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (giftId != null) {
+        const idEl = document.createElement('div');
+        idEl.className = 'sounds-tab-giftid';
+        idEl.textContent = `ID: ${giftId}`;
+        info.appendChild(idEl);
+      }
+
+      const soundEl = document.createElement('div');
+      soundEl.className = 'sounds-tab-sound';
+      soundEl.textContent = `🔊 ${getSoundDisplayName(soundId)}`;
+      info.appendChild(soundEl);
+
+      row.appendChild(info);
+
+      const actions = document.createElement('div');
+      actions.className = 'sounds-tab-actions';
+
+      const testBtn = document.createElement('button');
+      testBtn.className = 'sounds-tab-btn';
+      testBtn.textContent = '▶';
+      testBtn.title = 'Test sound';
+      testBtn.addEventListener('click', () => playAlertSound(soundId));
+      actions.appendChild(testBtn);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'sounds-tab-btn remove';
+      removeBtn.textContent = '✕';
+      removeBtn.title = 'Remove sound';
+      removeBtn.addEventListener('click', () => {
+        if (type === 'gift') {
+          delete giftSounds[key];
+          saveGiftSounds();
+          renderGiftGallery(giftSearch.value);
+        } else {
+          delete triggerSounds[key];
+          saveTriggerSounds();
+          renderTriggers();
+        }
+        renderSoundsTab();
+      });
+      actions.appendChild(removeBtn);
+
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  /* ---------- Cloud Save / Load ---------- */
+  async function cloudSaveConfig() {
+    const input = $('#cloudUsernameInput');
+    const status = $('#cloudSaveStatus');
+    if (!input || !status) return;
+    const username = (input.value || currentUsername || '').trim();
+    if (!username) { status.textContent = 'Ingresa un username primero.'; return; }
+    try {
+      status.textContent = '💾 Guardando…';
+      const resp = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, giftSounds, triggerSounds, followSound, followSoundEnabled })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        status.textContent = `✅ Config guardada para @${data.username}`;
+      } else {
+        status.textContent = '❌ ' + (data.error || 'Error al guardar');
+      }
+    } catch {
+      status.textContent = '❌ Error de red';
+    }
+  }
+
+  async function cloudLoadConfig() {
+    const input = $('#cloudUsernameInput');
+    const status = $('#cloudSaveStatus');
+    if (!input || !status) return;
+    const username = (input.value || '').trim().replace(/^@/, '');
+    if (!username) { status.textContent = 'Ingresa un username para cargar.'; return; }
+    try {
+      status.textContent = '📥 Cargando…';
+      const resp = await fetch(`/api/config/load/${encodeURIComponent(username)}`);
+      if (resp.status === 404) { status.textContent = '❌ No hay config guardada para este username'; return; }
+      const config = await resp.json();
+      if (config.error) { status.textContent = '❌ ' + config.error; return; }
+
+      Object.keys(giftSounds).forEach(k => delete giftSounds[k]);
+      Object.assign(giftSounds, config.giftSounds || {});
+      saveGiftSounds();
+
+      Object.keys(triggerSounds).forEach(k => delete triggerSounds[k]);
+      Object.assign(triggerSounds, config.triggerSounds || {});
+      saveTriggerSounds();
+
+      followSound = config.followSound || '';
+      followSoundEnabled = !!config.followSoundEnabled;
+      saveFollowSoundConfig();
+
+      renderGiftGallery(giftSearch.value);
+      renderTriggers();
+      renderFollowSoundOptions();
+      renderSoundsTab();
+
+      status.textContent = `✅ Config cargada de @${username}`;
+    } catch {
+      status.textContent = '❌ Error de red';
+    }
+  }
+
+  const cloudSaveBtn = $('#cloudSaveBtn');
+  const cloudLoadBtn = $('#cloudLoadBtn');
+  if (cloudSaveBtn) cloudSaveBtn.addEventListener('click', cloudSaveConfig);
+  if (cloudLoadBtn) cloudLoadBtn.addEventListener('click', cloudLoadConfig);
+
   /* ---------- Media Session API ---------- */
 
   /* Register action handlers once at startup */

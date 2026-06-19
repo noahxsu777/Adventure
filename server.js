@@ -329,6 +329,60 @@ app.get('/api/sounds/popular', async (_req, res) => {
   res.json(results);
 });
 
+/* tik.tools Gift Catalog — enriches the static GIFT_CATALOG with API data */
+app.get('/api/gifts/catalog', async (_req, res) => {
+  try {
+    const resp = await fetch('https://api.tik.tools/v1/gifts', {
+      headers: {
+        'Authorization': `Bearer ${TIKTOOLS_API_KEY}`,
+        'User-Agent': 'Mozilla/5.0'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!resp.ok) throw new Error(`tik.tools gifts ${resp.status}`);
+    const raw = await resp.json();
+    const arr = Array.isArray(raw) ? raw : (raw.gifts || raw.data || raw.items || []);
+    const gifts = arr.map(g => ({
+      id: g.id ?? g.giftId ?? g.gift_id,
+      name: g.name || g.giftName || g.gift_name || '',
+      image: g.image || g.imageUrl || g.image_url || g.pictureUrl || g.picture_url || '',
+      diamonds: g.diamonds ?? g.diamondCount ?? g.diamond_count ?? 0
+    })).filter(g => g.id != null && g.name);
+    res.json(gifts);
+  } catch (err) {
+    console.log('tik.tools gift catalog unavailable:', err.message);
+    res.json([]);
+  }
+});
+
+/* Cloud save/load user sound configurations */
+const configStore = {};
+
+app.post('/api/config/save', (req, res) => {
+  const { username, giftSounds, triggerSounds, followSound, followSoundEnabled } = req.body;
+  if (!username || typeof username !== 'string' || username.length > 100) {
+    return res.status(400).json({ error: 'Valid username required' });
+  }
+  const key = username.toLowerCase().replace(/^@/, '').trim();
+  if (!key) return res.status(400).json({ error: 'Valid username required' });
+  configStore[key] = {
+    giftSounds: giftSounds || {},
+    triggerSounds: triggerSounds || {},
+    followSound: followSound || '',
+    followSoundEnabled: !!followSoundEnabled,
+    savedAt: Date.now()
+  };
+  console.log(`[Config] Saved config for @${key}`);
+  res.json({ ok: true, username: key, savedAt: configStore[key].savedAt });
+});
+
+app.get('/api/config/load/:username', (req, res) => {
+  const key = (req.params.username || '').toLowerCase().replace(/^@/, '').trim();
+  const config = configStore[key];
+  if (!config) return res.status(404).json({ error: 'No config found for this username' });
+  res.json(config);
+});
+
 /* Proxy MyInstants MP3 to avoid CORS */
 app.get('/api/sounds/play', async (req, res) => {
   const { url } = req.query;
@@ -596,6 +650,33 @@ wss.on('connection', (ws) => {
                 }
               } catch (stickerErr) {
                 console.log('Sticker extraction failed (non-fatal):', stickerErr?.message || stickerErr);
+              }
+
+              /* ── Fetch live gift catalog from TikTok WebCast API ── */
+              try {
+                const axios = connection.webClient?.axiosInstance;
+                if (axios && state.roomId) {
+                  const giftResp = await axios.get('https://webcast.tiktok.com/webcast/gift/list/', {
+                    params: { aid: '1988', room_id: state.roomId },
+                    timeout: 6000
+                  });
+                  const giftData = giftResp?.data?.data || giftResp?.data;
+                  const rawGifts = giftData?.gifts || giftData?.gift_list || giftData?.giftList || [];
+                  if (Array.isArray(rawGifts) && rawGifts.length > 0) {
+                    const gifts = rawGifts.map(g => ({
+                      id: g.id,
+                      name: g.name,
+                      image: g.image?.url_list?.[0] || g.image?.url?.[0] || g.icon?.url_list?.[0] || '',
+                      diamonds: g.diamond_count ?? g.diamondCount ?? 0
+                    })).filter(g => g.id && g.name);
+                    if (gifts.length > 0) {
+                      console.log(`Found ${gifts.length} live gifts for ${username}`);
+                      broadcast(ws, 'gift_catalog', { gifts });
+                    }
+                  }
+                }
+              } catch (giftErr) {
+                console.log('Live gift catalog fetch failed (non-fatal):', giftErr?.message || giftErr);
               }
             })
             .catch((err) => {

@@ -46,6 +46,7 @@
     <button class="tab-btn active" data-tab="mainTab">💬 Chat</button>
     <button class="tab-btn" data-tab="ttsTab">⚙️ Settings</button>
     <button class="tab-btn" data-tab="giftGalleryTab">🎁 Gifts</button>
+    <button class="tab-btn" data-tab="soundsTab">🔊 Sounds</button>
     <button class="tab-btn" data-tab="liveTab">🎮 LIVE</button>
   </nav>
 
@@ -406,6 +407,34 @@
       <div class="control-group sound-library">
         <h3>🔊 Sounds</h3>
         <div id="soundLibrary" class="sound-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Sounds Tab ========== -->
+  <section id="soundsTab" class="tab-content">
+    <div class="tts-scroll">
+      <div class="gallery-header">
+        <h2>🔊 Sounds</h2>
+        <p class="gallery-desc">Regalos y emotes con sonidos configurados. Los sonidos se reproducen en cola.</p>
+      </div>
+
+      <div class="control-group cloud-save-section">
+        <h3>☁️ Cloud Save</h3>
+        <p class="gallery-desc">Guarda y carga tu configuración de sonidos usando tu username.</p>
+        <div class="cloud-save-row">
+          <input id="cloudUsernameInput" type="text" placeholder="@username" class="cloud-username-input" autocomplete="off" />
+          <button id="cloudSaveBtn" class="cloud-save-btn">💾 Save</button>
+          <button id="cloudLoadBtn" class="cloud-load-btn">📥 Load</button>
+        </div>
+        <div id="cloudSaveStatus" class="cloud-save-status"></div>
+      </div>
+
+      <div class="control-group">
+        <h3>🎁 Configured Sounds</h3>
+        <div id="soundsTabList" class="sounds-tab-list">
+          <div class="gift-empty">No hay sonidos configurados aún.</div>
+        </div>
       </div>
     </div>
   </section>
