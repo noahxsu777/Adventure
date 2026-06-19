@@ -329,6 +329,32 @@ app.get('/api/sounds/popular', async (_req, res) => {
   res.json(results);
 });
 
+/* tik.tools Gift Catalog — enriches the static GIFT_CATALOG with API data */
+app.get('/api/gifts/catalog', async (_req, res) => {
+  try {
+    const resp = await fetch('https://api.tik.tools/v1/gifts', {
+      headers: {
+        'Authorization': `Bearer ${TIKTOOLS_API_KEY}`,
+        'User-Agent': 'Mozilla/5.0'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!resp.ok) throw new Error(`tik.tools gifts ${resp.status}`);
+    const raw = await resp.json();
+    const arr = Array.isArray(raw) ? raw : (raw.gifts || raw.data || raw.items || []);
+    const gifts = arr.map(g => ({
+      id: g.id ?? g.giftId ?? g.gift_id,
+      name: g.name || g.giftName || g.gift_name || '',
+      image: g.image || g.imageUrl || g.image_url || g.pictureUrl || g.picture_url || '',
+      diamonds: g.diamonds ?? g.diamondCount ?? g.diamond_count ?? 0
+    })).filter(g => g.id != null && g.name);
+    res.json(gifts);
+  } catch (err) {
+    console.log('tik.tools gift catalog unavailable:', err.message);
+    res.json([]);
+  }
+});
+
 /* Proxy MyInstants MP3 to avoid CORS */
 app.get('/api/sounds/play', async (req, res) => {
   const { url } = req.query;

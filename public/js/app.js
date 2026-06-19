@@ -250,8 +250,34 @@
       });
     }
   } catch {}
+
+  /* Enrich catalog from tik.tools API — adds gifts not in the static list */
+  fetch('/api/gifts/catalog')
+    .then(r => r.json())
+    .then(apiGifts => {
+      if (!Array.isArray(apiGifts) || apiGifts.length === 0) return;
+      let added = 0;
+      apiGifts.forEach(g => {
+        if (!g.id) return;
+        const idStr = String(g.id);
+        if (!giftIdIndex[idStr]) {
+          const key = 'tiktools_' + idStr;
+          giftRegistry[key] = { name: g.name, imageUrl: g.image || '', diamonds: g.diamonds || 0, count: 0 };
+          giftIdIndex[idStr] = key;
+          if (g.name) giftNameIndex[g.name.toLowerCase()] = key;
+          added++;
+        } else {
+          const key = giftIdIndex[idStr];
+          if (g.image && !giftRegistry[key].imageUrl) giftRegistry[key].imageUrl = g.image;
+          if (g.diamonds && !giftRegistry[key].diamonds) giftRegistry[key].diamonds = g.diamonds;
+        }
+      });
+      if (added > 0) renderGiftGallery(giftSearch ? giftSearch.value : '');
+    })
+    .catch(() => {});
+
   function saveLearnedGifts() {
-    /* Save non-catalog gifts that have an image (learned from live events) */
+    /* Save non-catalog gifts that have an image (learned from live events or tik.tools API) */
     const learned = {};
     Object.entries(giftRegistry).forEach(([key, g]) => {
       if (!key.startsWith('catalog_') && g.imageUrl) {
