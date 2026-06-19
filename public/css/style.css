@@ -237,9 +237,60 @@ body::after {
 #mainTab,
 #ttsTab,
 #giftGalleryTab,
+#soundsTab,
 #liveTab {
   width: min(1100px, 100%);
   margin: 0 auto;
+}
+
+/* ============================================================
+   Responsive header – mobile (≤640px)
+   ============================================================ */
+@media (max-width: 640px) {
+  #header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: calc(var(--safe-top) + 6px) 12px 10px;
+    border-radius: 0 0 14px 14px;
+  }
+
+  .logo {
+    justify-content: center;
+  }
+
+  .connect-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .mode-toggle {
+    order: -1;
+    width: 100%;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 9px 6px;
+    font-size: 0.8rem;
+    text-align: center;
+    min-height: 40px;
+  }
+
+  #usernameInput {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  #connectBtn,
+  #disconnectBtn {
+    flex-shrink: 0;
+    padding: 8px 14px;
+  }
+
+  #statusBadge {
+    flex-shrink: 0;
+  }
 }
 
 /* ============================================================

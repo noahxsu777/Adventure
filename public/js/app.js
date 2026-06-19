@@ -196,16 +196,15 @@
   let soundModalGiftId = null;
   let soundModalTriggerId = null;
 
-  /* Dedup gift sounds: prevent same gift from playing sound twice within 3 seconds */
+  /* Dedup gift sounds: prevent same registry entry from playing twice within 4 seconds */
   const recentGiftSounds = {};
-  function shouldPlayGiftSound(user, giftId, repeatCount) {
-    const dedupKey = (user || '') + '_' + (giftId || '') + '_' + (repeatCount || 1);
+  function shouldPlayGiftSound(user, registryKey, repeatCount) {
+    const dedupKey = String(user || '') + '_' + String(registryKey || '') + '_' + String(Math.max(repeatCount || 0, 1));
     const now = Date.now();
-    if (recentGiftSounds[dedupKey] && now - recentGiftSounds[dedupKey] < 3000) return false;
+    if (recentGiftSounds[dedupKey] && now - recentGiftSounds[dedupKey] < 4000) return false;
     recentGiftSounds[dedupKey] = now;
-    /* Cleanup old entries every call */
     for (const k in recentGiftSounds) {
-      if (now - recentGiftSounds[k] > 5000) delete recentGiftSounds[k];
+      if (now - recentGiftSounds[k] > 6000) delete recentGiftSounds[k];
     }
     return true;
   }
@@ -1145,7 +1144,7 @@
     const assignedSound = giftSounds[key];
     /* "Un solo sonidos en combo" ON => only play at combo end; OFF => play each increment */
     const shouldPlayByComboMode = playEachGiftInComboToggle?.checked ? (repeatEnd !== false) : true;
-    if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, giftId, count)) {
+    if (assignedSound && shouldPlayByComboMode && shouldPlayGiftSound(user, key, count)) {
       enqueueAlertSound(assignedSound);
     }
 

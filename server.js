@@ -427,6 +427,7 @@ const clients = new Map();
 function connectPremium(ws, username) {
   let reconnectDelay = 5000;
   const MAX_DELAY = 60000;
+  const recentPremiumGifts = {};
 
   function openTikTools() {
     const tikUrl = `wss://api.tik.tools?uniqueId=${encodeURIComponent(username)}&apiKey=${TIKTOOLS_API_KEY}`;
@@ -458,7 +459,14 @@ function connectPremium(ws, username) {
             isSubscriber: user.isSubscriber || false
           });
           break;
-        case 'gift':
+        case 'gift': {
+          const gDedupKey = `${user.uniqueId}_${data.giftId}_${data.repeatCount || 1}`;
+          const gNow = Date.now();
+          if (recentPremiumGifts[gDedupKey] && gNow - recentPremiumGifts[gDedupKey] < 3000) break;
+          recentPremiumGifts[gDedupKey] = gNow;
+          for (const k in recentPremiumGifts) {
+            if (gNow - recentPremiumGifts[k] > 6000) delete recentPremiumGifts[k];
+          }
           broadcast(ws, 'gift', {
             user: user.uniqueId || 'unknown',
             nickname: user.nickname || '',
@@ -471,6 +479,7 @@ function connectPremium(ws, username) {
             profilePictureUrl: user.profilePictureUrl || ''
           });
           break;
+        }
         case 'like':
           broadcast(ws, 'like', {
             user: user.uniqueId || 'unknown',
@@ -877,7 +886,19 @@ wss.on('connection', (ws) => {
     }
     console.log('Client disconnected');
   });
+
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.isAlive = true;
 });
+
+/* WebSocket heartbeat — terminates stale connections (mobile background kills WS silently) */
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 25000);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
