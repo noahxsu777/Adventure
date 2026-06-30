@@ -59,6 +59,15 @@
   const soundLibrary    = $('#soundLibrary');
   const triggersGrid    = $('#triggersGrid');
 
+  const radioPlayer       = $('#radioPlayer');
+  const radioNowPlaying   = $('#radioNowPlaying');
+  const radioPlayerCard   = $('.radio-player-card');
+  const radioStopBtn      = $('#radioStopBtn');
+  const radioVolumeSlider = $('#radioVolumeSlider');
+  const radioCustomUrl    = $('#radioCustomUrl');
+  const radioLoadBtn      = $('#radioLoadBtn');
+  const radioMessage      = $('#radioMessage');
+
   /* Sound Browser Modal */
   const soundModal        = $('#soundModal');
   const soundModalClose   = $('#soundModalClose');
@@ -363,6 +372,85 @@
       if (target) target.classList.add('active');
     });
   });
+
+  /* ---------- Radio player ---------- */
+  function setRadioMessage(message) {
+    if (radioMessage) radioMessage.textContent = message || '';
+  }
+
+  function setRadioStation(title, streamUrl, stationButton) {
+    if (!radioPlayer || !radioNowPlaying) return;
+
+    radioPlayer.src = streamUrl;
+    radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
+    radioNowPlaying.textContent = title;
+    setRadioMessage('');
+
+    document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
+    if (stationButton) stationButton.classList.add('active');
+
+    radioPlayer.play().catch(() => {
+      setRadioMessage('Presiona play para iniciar la radio.');
+    });
+  }
+
+  function isValidAudioUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  }
+
+  if (radioPlayer) {
+    document.querySelectorAll('.radio-station').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setRadioStation(btn.dataset.title, btn.dataset.stream, btn);
+      });
+    });
+
+    radioPlayer.addEventListener('play', () => {
+      if (radioPlayerCard) radioPlayerCard.classList.add('playing');
+    });
+
+    radioPlayer.addEventListener('pause', () => {
+      if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
+    });
+
+    radioPlayer.addEventListener('error', () => {
+      if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
+      setRadioMessage('No se pudo cargar esta estación. Prueba otra URL.');
+    });
+
+    if (radioStopBtn) {
+      radioStopBtn.addEventListener('click', () => {
+        radioPlayer.pause();
+        radioPlayer.removeAttribute('src');
+        radioPlayer.load();
+        radioNowPlaying.textContent = 'Selecciona una estación';
+        document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
+        setRadioMessage('');
+      });
+    }
+
+    if (radioVolumeSlider) {
+      radioVolumeSlider.addEventListener('input', () => {
+        radioPlayer.volume = parseFloat(radioVolumeSlider.value);
+      });
+    }
+
+    if (radioLoadBtn && radioCustomUrl) {
+      radioLoadBtn.addEventListener('click', () => {
+        const streamUrl = radioCustomUrl.value.trim();
+        if (!isValidAudioUrl(streamUrl)) {
+          setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
+          return;
+        }
+        setRadioStation('Stream personalizado', streamUrl);
+      });
+    }
+  }
 
   /* ---------- Sound Browser Modal ---------- */
 
