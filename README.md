@@ -11,7 +11,20 @@ A modern web app with a dark TikTok-style UI that connects to TikTok Live stream
 - **Audio Controls** – Play / Pause / Stop TTS, volume slider, speed slider, voice selector, and a queue visualization.
 - **Filter System** – Optional keyword filter to read only matching messages.
 - **Background Playback** – TTS continues when the tab is hidden or minimized.
-- **Dark Theme** – TikTok-inspired dark UI, responsive for mobile and desktop.
+- **Dark Theme** – iOS-inspired glassmorphism dark UI, responsive for mobile and desktop.
+- **Radio / `!play` command** – Any viewer can type `!play <song name or YouTube URL>` in TikTok chat to queue a YouTube audio stream. A full-screen iOS "Now Playing" card appears with album art, animated equalizer, and title.
+
+## `!play` Radio Command
+
+Type in TikTok Live chat:
+
+| Command | What happens |
+|---------|-------------|
+| `!play lo-fi hip hop` | Searches YouTube and plays the top result |
+| `!play https://youtu.be/dQw4w9WgXcQ` | Plays a specific YouTube video (audio only view) |
+| `!play https://www.youtube.com/watch?v=dQw4w9WgXcQ` | Same, full URL format |
+
+The server uses the Invidious open-source YouTube API (no credentials required) to resolve searches. If all Invidious instances are unreachable, it falls back to YouTube's embed search. Audio streams directly from YouTube via the embedded player — no files are downloaded.
 
 ## Getting Started
 
@@ -28,6 +41,7 @@ Open `http://localhost:3000`, enter a TikTok username that is currently live, an
 |-------|-----------|
 | Backend | Node.js, Express, ws (WebSocket) |
 | TikTok API | tiktok-live-connector |
+| YouTube search | Invidious public API (no key) |
 | Frontend | Vanilla HTML/CSS/JS, Web Speech API |
 
 The Node.js server connects to TikTok's live stream and forwards events over WebSocket to the browser. The frontend renders events in real time and queues them for TTS playback.

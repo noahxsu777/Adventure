@@ -16,6 +16,8 @@
   const musicPlayerRequester = $('#musicPlayerRequester');
   const musicPlayerFrame = $('#musicPlayerFrame');
   const musicPlayerClose = $('#musicPlayerClose');
+  const npBlurBg         = $('#npBlurBg');
+  const npAlbumArt       = $('#npAlbumArt');
 
   const toggleChat      = $('#toggleChat');
   const toggleGift      = $('#toggleGift');
@@ -785,6 +787,14 @@
     disconnectBtn.classList.toggle('hidden', s === 'offline');
   }
 
+  /* ---------- YouTube helpers ---------- */
+  function extractYouTubeId(text) {
+    const m = String(text || '').match(
+      /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+    );
+    return m ? m[1] : null;
+  }
+
   /* ---------- Event handler ---------- */
   function parsePlayCommand(text) {
     const m = String(text || '').trim().match(/^!play(?:\s+(.+))?$/i);
@@ -792,14 +802,50 @@
     return (m[1] || '').trim();
   }
 
-  function playYouTubeSearch(query, user) {
+  async function playYouTubeSearch(query, user) {
     if (!query) {
-      appendSystem('Uso: !play <nombre de la canción>');
+      appendSystem('Uso: !play <nombre de la canción o URL de YouTube>');
       return;
     }
-    const src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
-    musicPlayerFrame.src = src;
-    musicPlayerTitle.textContent = `🎵 ${query}`;
+
+    let videoId = extractYouTubeId(query);
+    let title = query;
+    let thumbnail = '';
+
+    if (videoId) {
+      /* Direct YouTube URL — derive thumbnail from YouTube CDN */
+      thumbnail = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    } else {
+      /* Search via server Invidious proxy */
+      try {
+        const resp = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`);
+        if (resp.ok) {
+          const results = await resp.json();
+          if (Array.isArray(results) && results.length > 0) {
+            videoId = results[0].videoId;
+            title = results[0].title || query;
+            thumbnail = results[0].thumbnail || '';
+          }
+        }
+      } catch (e) {
+        console.warn('YouTube search failed:', e.message);
+      }
+    }
+
+    if (videoId) {
+      musicPlayerFrame.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`;
+      if (!thumbnail) thumbnail = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    } else {
+      /* All lookups failed — fall back to YouTube embed search */
+      musicPlayerFrame.src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
+    }
+
+    if (npBlurBg)  npBlurBg.style.backgroundImage = thumbnail ? `url(${thumbnail})` : '';
+    if (npAlbumArt) {
+      npAlbumArt.src = thumbnail || '';
+      npAlbumArt.style.display = thumbnail ? '' : 'none';
+    }
+    musicPlayerTitle.textContent = title || query;
     musicPlayerRequester.textContent = user ? `Solicitada por @${user}` : '';
     musicPlayerCard.classList.remove('hidden');
   }
@@ -807,6 +853,8 @@
   function stopMusicPlayer() {
     if (!musicPlayerFrame) return;
     musicPlayerFrame.src = '';
+    if (npBlurBg)   npBlurBg.style.backgroundImage = '';
+    if (npAlbumArt) npAlbumArt.src = '';
     musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
     musicPlayerRequester.textContent = '';
     musicPlayerCard.classList.add('hidden');

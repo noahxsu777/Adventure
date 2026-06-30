@@ -337,63 +337,173 @@ body::after {
   gap: 4px;
 }
 
+/* ============================================================
+   iOS Now Playing Widget (music player / radio)
+   ============================================================ */
 .music-player {
+  position: relative;
   margin: 10px 12px 0;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface) 75%, #000 25%);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: npSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.music-player-head {
+@keyframes npSlideIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* Blurred album-art background */
+.np-blur-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(30px) brightness(0.3) saturate(1.8);
+  transform: scale(1.2);
+  transition: background-image 0.5s ease;
+  z-index: 0;
+}
+
+/* Content layer above blur */
+.np-content {
+  position: relative;
+  z-index: 1;
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Top bar: RADIO chip + close */
+.np-header {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(90deg, rgba(37, 244, 238, 0.15), rgba(254, 44, 85, 0.15));
 }
 
-.music-player-meta {
-  min-width: 0;
-}
-
-.music-player-title {
-  font-size: 0.86rem;
+.np-chip {
+  font-size: 0.62rem;
   font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 3px 9px;
+  border-radius: 20px;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
-.music-player-requester {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.music-player-close {
+.np-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--text);
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  font-size: 0.9rem;
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.15s;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.np-close:active { transform: scale(0.88); background: rgba(255, 255, 255, 0.28); }
+
+/* Album art + equalizer overlay */
+.np-art-wrap {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  flex-shrink: 0;
 }
 
-.music-player-frame {
-  display: block;
+.np-art {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--surface2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: block;
+}
+
+/* Animated equalizer bars */
+.np-eq {
+  position: absolute;
+  bottom: 8px;
+  right: 6px;
+  display: flex;
+  gap: 2.5px;
+  align-items: flex-end;
+  height: 18px;
+}
+
+.np-eq span {
+  width: 3px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 2px;
+  transform-origin: bottom;
+  min-height: 3px;
+  animation: eqBar 0.6s ease-in-out infinite alternate;
+}
+.np-eq span:nth-child(1) { animation-delay: 0s;    animation-duration: 0.55s; height: 45%; }
+.np-eq span:nth-child(2) { animation-delay: 0.1s;  animation-duration: 0.7s;  height: 80%; }
+.np-eq span:nth-child(3) { animation-delay: 0.2s;  animation-duration: 0.5s;  height: 100%; }
+.np-eq span:nth-child(4) { animation-delay: 0.15s; animation-duration: 0.65s; height: 70%; }
+.np-eq span:nth-child(5) { animation-delay: 0.05s; animation-duration: 0.8s;  height: 50%; }
+
+@keyframes eqBar {
+  from { transform: scaleY(0.2); opacity: 0.6; }
+  to   { transform: scaleY(1);   opacity: 1; }
+}
+
+/* Track title & requester */
+.np-title {
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.np-requester {
+  text-align: center;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  padding: 0 8px;
+}
+
+/* YouTube iframe — positioned invisibly but present for autoplay */
+.np-yt-frame {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  height: 2px;
+  opacity: 0.01;
+  pointer-events: none;
   border: 0;
-  background: #000;
 }
 
 /* Chat message rows */

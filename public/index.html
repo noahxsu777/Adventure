@@ -60,20 +60,30 @@
       </div>
     </div>
     <div id="musicPlayerCard" class="music-player hidden">
-      <div class="music-player-head">
-        <div class="music-player-meta">
-          <div id="musicPlayerTitle" class="music-player-title">🎵 Reproductor YouTube</div>
-          <div id="musicPlayerRequester" class="music-player-requester"></div>
+      <!-- Blurred album-art background -->
+      <div class="np-blur-bg" id="npBlurBg" aria-hidden="true"></div>
+      <!-- Now Playing UI -->
+      <div class="np-content">
+        <div class="np-header">
+          <span class="np-chip">♪ RADIO</span>
+          <button id="musicPlayerClose" class="np-close" type="button" aria-label="Cerrar reproductor">✕</button>
         </div>
-        <button id="musicPlayerClose" class="music-player-close" type="button" aria-label="Cerrar reproductor">✕</button>
+        <div class="np-art-wrap">
+          <img id="npAlbumArt" class="np-art" src="" alt="Album art" />
+          <div class="np-eq" id="npEq" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div id="musicPlayerTitle" class="np-title">🎵 Reproductor YouTube</div>
+        <div id="musicPlayerRequester" class="np-requester"></div>
       </div>
+      <!-- YouTube iframe — tiny/invisible, provides audio playback -->
       <iframe
         id="musicPlayerFrame"
-        class="music-player-frame"
+        class="np-yt-frame"
         src=""
         title="YouTube Music Player"
-        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-        allowfullscreen
+        allow="autoplay; encrypted-media; picture-in-picture"
         referrerpolicy="strict-origin-when-cross-origin"
       ></iframe>
     </div>

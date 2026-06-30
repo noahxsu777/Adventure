@@ -387,6 +387,49 @@ app.get('/api/sounds/play', async (req, res) => {
   }
 });
 
+/* YouTube search via Invidious (free, no API key required) */
+const INVIDIOUS_INSTANCES = [
+  'https://invidious.fdn.fr',
+  'https://inv.nadeko.net',
+  'https://invidious.nerdvpn.de',
+  'https://yt.artemislena.eu'
+];
+
+app.get('/api/youtube/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length === 0) return res.status(400).json({ error: 'Missing query' });
+
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      const url = `${instance}/api/v1/search?q=${encodeURIComponent(q)}&type=video&fields=videoId,title,author,videoThumbnails&page=1`;
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(6000)
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (!Array.isArray(data) || data.length === 0) continue;
+
+      const results = data.slice(0, 5).map(v => {
+        const thumbs = Array.isArray(v.videoThumbnails) ? v.videoThumbnails : [];
+        const thumb = thumbs.find(t => t.quality === 'medium') || thumbs.find(t => t.quality === 'high') || thumbs[0];
+        const fallbackThumb = `https://img.youtube.com/vi/${v.videoId}/mqdefault.jpg`;
+        return {
+          videoId: v.videoId || '',
+          title: v.title || '',
+          author: v.author || '',
+          thumbnail: (thumb && thumb.url) ? thumb.url : fallbackThumb
+        };
+      }).filter(v => v.videoId);
+
+      if (results.length > 0) return res.json(results);
+    } catch { /* try next instance */ }
+  }
+
+  /* All instances failed — return empty; frontend falls back to embed search */
+  res.json([]);
+});
+
 const PORT = process.env.PORT || 3000;
 const TIKTOOLS_API_KEY = process.env.TIKTOOLS_API_KEY || 'tk_235e481d7e949fa580b3f0b3bf8040223481c16e398d2abb';
 
