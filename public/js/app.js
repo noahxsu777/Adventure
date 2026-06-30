@@ -792,11 +792,25 @@
   }
 
   /* ---------- YouTube helpers ---------- */
+  function isYouTubeVideoId(value) {
+    return /^[A-Za-z0-9_-]{11}$/.test(String(value || ''));
+  }
+
   function extractYouTubeId(text) {
     const m = String(text || '').match(
       /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
     );
-    return m ? m[1] : null;
+    return m && isYouTubeVideoId(m[1]) ? m[1] : null;
+  }
+
+  function getYouTubeThumbnail(videoId) {
+    if (!isYouTubeVideoId(videoId)) return '';
+    return `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
+  }
+
+  function getYouTubeEmbedUrl(videoId) {
+    if (!isYouTubeVideoId(videoId)) return '';
+    return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0`;
   }
 
   function setRadioStatus(message, isError) {
@@ -826,7 +840,7 @@
 
     if (videoId) {
       /* Direct YouTube URL — derive thumbnail from YouTube CDN */
-      thumbnail = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+      thumbnail = getYouTubeThumbnail(videoId);
     } else {
       /* Search via server Invidious proxy */
       try {
@@ -834,9 +848,12 @@
         if (resp.ok) {
           const results = await resp.json();
           if (Array.isArray(results) && results.length > 0) {
-            videoId = results[0].videoId;
-            title = results[0].title || query;
-            thumbnail = results[0].thumbnail || '';
+            const resultVideoId = results[0].videoId;
+            if (isYouTubeVideoId(resultVideoId)) {
+              videoId = resultVideoId;
+              title = results[0].title || query;
+              thumbnail = getYouTubeThumbnail(videoId);
+            }
           }
         }
       } catch (e) {
@@ -845,8 +862,8 @@
     }
 
     if (videoId) {
-      musicPlayerFrame.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`;
-      if (!thumbnail) thumbnail = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+      musicPlayerFrame.src = getYouTubeEmbedUrl(videoId);
+      if (!thumbnail) thumbnail = getYouTubeThumbnail(videoId);
     } else {
       /* All lookups failed — fall back to YouTube embed search */
       musicPlayerFrame.src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
