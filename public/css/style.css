@@ -278,6 +278,7 @@ body::after {
 .tab-content.active { display: flex; flex: 1; min-height: 0; }
 
 #mainTab,
+#radioTab,
 #ttsTab,
 #giftGalleryTab,
 #liveTab {
@@ -289,6 +290,10 @@ body::after {
    Chat Tab – full height scrolling
    ============================================================ */
 #mainTab {
+  flex-direction: column;
+}
+
+#radioTab {
   flex-direction: column;
 }
 
@@ -340,6 +345,73 @@ body::after {
 /* ============================================================
    iOS Now Playing Widget (music player / radio)
    ============================================================ */
+.radio-header {
+  text-align: center;
+  padding: 16px 0 8px;
+}
+
+.radio-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.radio-desc {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.radio-search {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  margin: 8px 0 0;
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+}
+
+.radio-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.radio-search input:focus {
+  border-color: var(--accent);
+}
+
+.radio-search button {
+  border: none;
+  border-radius: 12px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.radio-search button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.radio-status {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  padding: 8px 14px 0;
+}
+
+.radio-status.error {
+  color: var(--accent);
+}
+
 .music-player {
   position: relative;
   margin: 10px 12px 0;

@@ -44,6 +44,7 @@
   <!-- ========== Tab Navigation ========== -->
   <nav id="tabNav">
     <button class="tab-btn active" data-tab="mainTab">💬 Chat</button>
+    <button class="tab-btn" data-tab="radioTab">📻 Radio</button>
     <button class="tab-btn" data-tab="ttsTab">⚙️ Settings</button>
     <button class="tab-btn" data-tab="giftGalleryTab">🎁 Gifts</button>
     <button class="tab-btn" data-tab="liveTab">🎮 LIVE</button>
@@ -59,35 +60,50 @@
         <label><input type="checkbox" id="toggleFollow" checked /><span class="chip">➕ Follows</span></label>
       </div>
     </div>
-    <div id="musicPlayerCard" class="music-player hidden">
-      <!-- Blurred album-art background -->
-      <div class="np-blur-bg" id="npBlurBg" aria-hidden="true"></div>
-      <!-- Now Playing UI -->
-      <div class="np-content">
-        <div class="np-header">
-          <span class="np-chip">♪ RADIO</span>
-          <button id="musicPlayerClose" class="np-close" type="button" aria-label="Cerrar reproductor">✕</button>
-        </div>
-        <div class="np-art-wrap">
-          <img id="npAlbumArt" class="np-art" src="" alt="Album art" />
-          <div class="np-eq" id="npEq" aria-hidden="true">
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
-        </div>
-        <div id="musicPlayerTitle" class="np-title">🎵 Reproductor YouTube</div>
-        <div id="musicPlayerRequester" class="np-requester"></div>
-      </div>
-      <!-- YouTube iframe — tiny/invisible, provides audio playback -->
-      <iframe
-        id="musicPlayerFrame"
-        class="np-yt-frame"
-        src=""
-        title="YouTube Music Player"
-        allow="autoplay; encrypted-media; picture-in-picture"
-        referrerpolicy="strict-origin-when-cross-origin"
-      ></iframe>
-    </div>
     <div id="chatMessages"></div>
+  </section>
+
+  <!-- ========== Radio Tab ========== -->
+  <section id="radioTab" class="tab-content">
+    <div class="tts-scroll">
+      <div class="radio-header">
+        <h2>📻 Radio</h2>
+        <p class="radio-desc">Busca una canción o pega un enlace de YouTube para reproducirla.</p>
+      </div>
+      <form id="radioSearchForm" class="radio-search">
+        <input id="radioSearchInput" type="text" placeholder="🔍 Buscar canción o URL de YouTube…" autocomplete="off" />
+        <button id="radioSearchBtn" type="submit">Buscar</button>
+      </form>
+      <div id="radioSearchStatus" class="radio-status">También puedes usar <strong>!play canción</strong> desde el chat.</div>
+      <div id="musicPlayerCard" class="music-player hidden">
+        <!-- Blurred album-art background -->
+        <div class="np-blur-bg" id="npBlurBg" aria-hidden="true"></div>
+        <!-- Now Playing UI -->
+        <div class="np-content">
+          <div class="np-header">
+            <span class="np-chip">♪ RADIO</span>
+            <button id="musicPlayerClose" class="np-close" type="button" aria-label="Cerrar reproductor">✕</button>
+          </div>
+          <div class="np-art-wrap">
+            <img id="npAlbumArt" class="np-art" src="" alt="Album art" />
+            <div class="np-eq" id="npEq" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+          <div id="musicPlayerTitle" class="np-title">🎵 Reproductor YouTube</div>
+          <div id="musicPlayerRequester" class="np-requester"></div>
+        </div>
+        <!-- YouTube iframe — tiny/invisible, provides audio playback -->
+        <iframe
+          id="musicPlayerFrame"
+          class="np-yt-frame"
+          src=""
+          title="YouTube Music Player"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerpolicy="strict-origin-when-cross-origin"
+        ></iframe>
+      </div>
+    </div>
   </section>
 
   <!-- ========== TTS Controls Tab ========== -->

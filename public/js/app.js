@@ -18,6 +18,10 @@
   const musicPlayerClose = $('#musicPlayerClose');
   const npBlurBg         = $('#npBlurBg');
   const npAlbumArt       = $('#npAlbumArt');
+  const radioSearchForm  = $('#radioSearchForm');
+  const radioSearchInput = $('#radioSearchInput');
+  const radioSearchBtn   = $('#radioSearchBtn');
+  const radioSearchStatus = $('#radioSearchStatus');
 
   const toggleChat      = $('#toggleChat');
   const toggleGift      = $('#toggleGift');
@@ -795,6 +799,12 @@
     return m ? m[1] : null;
   }
 
+  function setRadioStatus(message, isError) {
+    if (!radioSearchStatus) return;
+    radioSearchStatus.textContent = message;
+    radioSearchStatus.classList.toggle('error', !!isError);
+  }
+
   /* ---------- Event handler ---------- */
   function parsePlayCommand(text) {
     const m = String(text || '').trim().match(/^!play(?:\s+(.+))?$/i);
@@ -805,9 +815,11 @@
   async function playYouTubeSearch(query, user) {
     if (!query) {
       appendSystem('Uso: !play <nombre de la canción o URL de YouTube>');
+      setRadioStatus('Escribe una canción o pega un enlace de YouTube.', true);
       return;
     }
 
+    setRadioStatus('Buscando en YouTube…');
     let videoId = extractYouTubeId(query);
     let title = query;
     let thumbnail = '';
@@ -848,6 +860,7 @@
     musicPlayerTitle.textContent = title || query;
     musicPlayerRequester.textContent = user ? `Solicitada por @${user}` : '';
     musicPlayerCard.classList.remove('hidden');
+    setRadioStatus(videoId ? 'Reproduciendo ahora.' : 'Reproduciendo con búsqueda de YouTube.');
   }
 
   function stopMusicPlayer() {
@@ -858,10 +871,24 @@
     musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
     musicPlayerRequester.textContent = '';
     musicPlayerCard.classList.add('hidden');
+    setRadioStatus('Radio detenida. Busca otra canción cuando quieras.');
   }
 
   if (musicPlayerClose) {
     musicPlayerClose.addEventListener('click', stopMusicPlayer);
+  }
+
+  if (radioSearchForm) {
+    radioSearchForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = radioSearchInput ? radioSearchInput.value.trim() : '';
+      if (radioSearchBtn) radioSearchBtn.disabled = true;
+      try {
+        await playYouTubeSearch(query);
+      } finally {
+        if (radioSearchBtn) radioSearchBtn.disabled = false;
+      }
+    });
   }
 
   function handleEvent(msg) {
