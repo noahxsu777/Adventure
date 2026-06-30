@@ -380,8 +380,13 @@
 
   function setRadioStation(title, streamUrl, stationButton) {
     if (!radioPlayer || !radioNowPlaying) return;
+    const safeStreamUrl = getSafeAudioUrl(streamUrl);
+    if (!safeStreamUrl) {
+      setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
+      return;
+    }
 
-    radioPlayer.src = streamUrl;
+    radioPlayer.src = safeStreamUrl;
     radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
     radioNowPlaying.textContent = title;
     setRadioMessage('');
@@ -394,13 +399,14 @@
     });
   }
 
-  function isValidAudioUrl(value) {
+  function getSafeAudioUrl(value) {
     try {
       const url = new URL(value);
-      return url.protocol === 'https:' || url.protocol === 'http:';
+      if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
     } catch {
-      return false;
+      return '';
     }
+    return '';
   }
 
   if (radioPlayer) {
@@ -443,7 +449,7 @@
     if (radioLoadBtn && radioCustomUrl) {
       radioLoadBtn.addEventListener('click', () => {
         const streamUrl = radioCustomUrl.value.trim();
-        if (!isValidAudioUrl(streamUrl)) {
+        if (!getSafeAudioUrl(streamUrl)) {
           setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
           return;
         }
