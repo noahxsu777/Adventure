@@ -1012,8 +1012,11 @@
     if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
     try {
       const url = new URL(text);
-      if (url.hostname.includes('youtu.be')) return url.pathname.slice(1).split('/')[0] || '';
-      if (url.hostname.includes('youtube.com')) {
+      const host = url.hostname.toLowerCase();
+      const isYouTubeHost = host === 'youtube.com' || host.endsWith('.youtube.com');
+      const isShortYouTubeHost = host === 'youtu.be' || host.endsWith('.youtu.be');
+      if (isShortYouTubeHost) return url.pathname.slice(1).split('/')[0] || '';
+      if (isYouTubeHost) {
         if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2] || '';
         if (url.pathname.startsWith('/embed/')) return url.pathname.split('/')[2] || '';
         return url.searchParams.get('v') || '';
