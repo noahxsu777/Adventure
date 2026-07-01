@@ -427,7 +427,12 @@
             <strong id="radioNowPlaying">Selecciona una estación</strong>
           </div>
         </div>
-        <audio id="radioPlayer" controls preload="none"></audio>
+        <audio id="radioPlayer" preload="none" playsinline></audio>
+        <div class="radio-controls" aria-label="Controles de radio">
+          <button id="radioPrevBtn" class="radio-control-btn" type="button" aria-label="Estación anterior">⏮</button>
+          <button id="radioPlayPauseBtn" class="radio-control-btn radio-control-main" type="button" aria-label="Reproducir radio">▶</button>
+          <button id="radioNextBtn" class="radio-control-btn" type="button" aria-label="Siguiente estación">⏭</button>
+        </div>
         <div class="radio-actions">
           <button id="radioStopBtn" class="radio-secondary-btn" type="button">⏹ Detener</button>
           <label class="radio-volume">

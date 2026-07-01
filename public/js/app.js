@@ -62,6 +62,9 @@
   const radioPlayer       = $('#radioPlayer');
   const radioNowPlaying   = $('#radioNowPlaying');
   const radioPlayerCard   = $('.radio-player-card');
+  const radioPlayPauseBtn = $('#radioPlayPauseBtn');
+  const radioPrevBtn      = $('#radioPrevBtn');
+  const radioNextBtn      = $('#radioNextBtn');
   const radioStopBtn      = $('#radioStopBtn');
   const radioVolumeSlider = $('#radioVolumeSlider');
   const radioCustomUrl    = $('#radioCustomUrl');
@@ -124,6 +127,10 @@
   let currentRadioTitle = '';
   let radioReconnectTimer = null;
   let radioReconnectAttempts = 0;
+  let currentRadioStationIndex = -1;
+  let radioShouldPlay = false;
+  let currentRadioUseProxy = false;
+  let lastChatRequester = '';
 
   /* ---------- Service Worker Registration ---------- */
   if ('serviceWorker' in navigator) {
@@ -256,7 +263,7 @@
     if (currentAudio && currentAudio.paused && !currentAudio.ended) {
       currentAudio.play().catch(() => {});
     }
-    if (radioPlayer && currentRadioStreamUrl && radioPlayer.paused && !radioPlayer.ended) {
+    if (radioPlayer && radioShouldPlay && currentRadioStreamUrl && radioPlayer.paused && !radioPlayer.ended) {
       radioPlayer.play().catch(() => {});
     }
     if (ttsProvider.value === 'browser' && isSpeaking && speechSynthesis.paused) {
@@ -265,7 +272,7 @@
     if (currentTtsLabel) {
       updateMediaSession(currentTtsLabel);
     } else {
-      mediaSessionIdle();
+      updateActiveMediaSession();
     }
   }
 
@@ -523,15 +530,75 @@
     radioReconnectTimer = null;
   }
 
+  function getRadioPlaybackUrl(streamUrl) {
+    const safeStreamUrl = getSafeAudioUrl(streamUrl);
+    if (!safeStreamUrl) return '';
+    return currentRadioUseProxy ? `/api/radio-proxy?url=${encodeURIComponent(safeStreamUrl)}` : safeStreamUrl;
+  }
+
+  function updateRadioControls() {
+    if (!radioPlayPauseBtn || !radioPlayer) return;
+    const playing = radioShouldPlay && !radioPlayer.paused && !radioPlayer.ended;
+    radioPlayPauseBtn.textContent = playing ? '⏸' : '▶';
+    radioPlayPauseBtn.setAttribute('aria-label', playing ? 'Pausar radio' : 'Reproducir radio');
+  }
+
+  function playCurrentRadio() {
+    if (!radioPlayer || !currentRadioStreamUrl) return;
+    radioShouldPlay = true;
+    primeAlwaysPlayingState();
+    radioPlayer.play().catch((err) => {
+      setRadioMessage('Presiona ▶ para iniciar la radio.');
+      if (err?.name !== 'NotAllowedError') scheduleRadioReconnect();
+    });
+    updateRadioControls();
+  }
+
+  function pauseCurrentRadio() {
+    if (!radioPlayer) return;
+    radioShouldPlay = false;
+    radioPlayer.pause();
+    updateActiveMediaSession();
+    updateRadioControls();
+  }
+
+  function stopCurrentRadio() {
+    if (!radioPlayer || !radioNowPlaying) return;
+    clearRadioReconnect();
+    radioShouldPlay = false;
+    currentRadioStreamUrl = '';
+    currentRadioTitle = '';
+    currentRadioStationIndex = -1;
+    currentRadioUseProxy = false;
+    radioReconnectAttempts = 0;
+    radioPlayer.pause();
+    radioPlayer.removeAttribute('src');
+    radioPlayer.load();
+    radioNowPlaying.textContent = 'Selecciona una estación';
+    document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
+    setRadioMessage('');
+    updateRadioControls();
+    mediaSessionIdle();
+  }
+
+  function playAdjacentRadio(direction) {
+    const stations = Array.from(document.querySelectorAll('.radio-station'));
+    if (!stations.length) return;
+    const current = currentRadioStationIndex >= 0 ? currentRadioStationIndex : 0;
+    const next = (current + direction + stations.length) % stations.length;
+    const btn = stations[next];
+    setRadioStation(btn.dataset.title, btn.dataset.stream, btn, next);
+  }
+
   function scheduleRadioReconnect() {
-    if (!radioPlayer || !currentRadioStreamUrl || radioReconnectTimer) return;
+    if (!radioPlayer || !radioShouldPlay || !currentRadioStreamUrl || radioReconnectTimer) return;
     radioReconnectAttempts++;
     const delay = Math.min(2000 * Math.pow(1.5, radioReconnectAttempts - 1), 30000);
     setRadioMessage(`Reconectando radio en ${Math.ceil(delay / 1000)}s…`);
     radioReconnectTimer = setTimeout(() => {
       radioReconnectTimer = null;
       if (!currentRadioStreamUrl) return;
-      radioPlayer.src = currentRadioStreamUrl;
+      radioPlayer.src = getRadioPlaybackUrl(currentRadioStreamUrl);
       radioPlayer.load();
       primeAlwaysPlayingState();
       radioPlayer.play().catch(() => {
@@ -540,7 +607,7 @@
     }, delay);
   }
 
-  function setRadioStation(title, streamUrl, stationButton) {
+  function setRadioStation(title, streamUrl, stationButton, stationIndex = -1) {
     if (!radioPlayer || !radioNowPlaying) return;
     const safeStreamUrl = getSafeAudioUrl(streamUrl);
     if (!safeStreamUrl) {
@@ -549,10 +616,13 @@
     }
 
     clearRadioReconnect();
+    radioShouldPlay = true;
     currentRadioStreamUrl = safeStreamUrl;
     currentRadioTitle = title;
+    currentRadioStationIndex = stationIndex;
+    currentRadioUseProxy = !!stationButton;
     radioReconnectAttempts = 0;
-    radioPlayer.src = safeStreamUrl;
+    radioPlayer.src = getRadioPlaybackUrl(safeStreamUrl);
     radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
     radioNowPlaying.textContent = title;
     setRadioMessage('');
@@ -561,9 +631,7 @@
     document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
     if (stationButton) stationButton.classList.add('active');
 
-    radioPlayer.play().catch(() => {
-      setRadioMessage('Presiona play para iniciar la radio.');
-    });
+    playCurrentRadio();
   }
 
   function getSafeAudioUrl(value) {
@@ -577,9 +645,9 @@
   }
 
   if (radioPlayer) {
-    document.querySelectorAll('.radio-station').forEach(btn => {
+    document.querySelectorAll('.radio-station').forEach((btn, index) => {
       btn.addEventListener('click', () => {
-        setRadioStation(btn.dataset.title, btn.dataset.stream, btn);
+        setRadioStation(btn.dataset.title, btn.dataset.stream, btn, index);
       });
     });
 
@@ -588,15 +656,18 @@
       radioReconnectAttempts = 0;
       if (radioPlayerCard) radioPlayerCard.classList.add('playing');
       updateMediaSession(`Radio: ${currentRadioTitle || radioNowPlaying.textContent || 'En vivo'}`);
+      updateRadioControls();
     });
 
     radioPlayer.addEventListener('pause', () => {
       if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
+      updateRadioControls();
     });
 
     radioPlayer.addEventListener('error', () => {
       if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
-      if (currentRadioStreamUrl) {
+      updateRadioControls();
+      if (currentRadioStreamUrl && radioShouldPlay) {
         scheduleRadioReconnect();
       } else {
         setRadioMessage('No se pudo cargar esta estación. Prueba otra URL.');
@@ -605,23 +676,31 @@
 
     ['stalled', 'suspend', 'waiting'].forEach((eventName) => {
       radioPlayer.addEventListener(eventName, () => {
-        if (currentRadioStreamUrl && !radioPlayer.paused) scheduleRadioReconnect();
+        if (currentRadioStreamUrl && radioShouldPlay && !radioPlayer.paused) scheduleRadioReconnect();
       });
     });
 
-    if (radioStopBtn) {
-      radioStopBtn.addEventListener('click', () => {
-        clearRadioReconnect();
-        currentRadioStreamUrl = '';
-        currentRadioTitle = '';
-        radioReconnectAttempts = 0;
-        radioPlayer.pause();
-        radioPlayer.removeAttribute('src');
-        radioPlayer.load();
-        radioNowPlaying.textContent = 'Selecciona una estación';
-        document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
-        setRadioMessage('');
+    if (radioPlayPauseBtn) {
+      radioPlayPauseBtn.addEventListener('click', () => {
+        if (!currentRadioStreamUrl) {
+          playAdjacentRadio(1);
+          return;
+        }
+        if (radioPlayer.paused || radioPlayer.ended) playCurrentRadio();
+        else pauseCurrentRadio();
       });
+    }
+
+    if (radioPrevBtn) {
+      radioPrevBtn.addEventListener('click', () => playAdjacentRadio(-1));
+    }
+
+    if (radioNextBtn) {
+      radioNextBtn.addEventListener('click', () => playAdjacentRadio(1));
+    }
+
+    if (radioStopBtn) {
+      radioStopBtn.addEventListener('click', stopCurrentRadio);
     }
 
     if (radioVolumeSlider) {
@@ -1130,12 +1209,14 @@
       return;
     }
     primeAlwaysPlayingState();
+    lastChatRequester = user || '';
     musicPlayerFrame.src = getYouTubeEmbedSrc(query);
     musicPlayerTitle.textContent = `🎵 ${query}`;
     musicPlayerRequester.textContent = user
       ? `Solicitada por @${user} · Si no inicia, toca ▶ en YouTube`
       : 'Si no inicia, toca ▶ en YouTube';
     musicPlayerCard.classList.remove('hidden');
+    if (user) appendSystem(`🎵 @${user} solicitó: ${query}`);
     updateMediaSession(`YouTube: ${query}`);
   }
 
@@ -1144,6 +1225,7 @@
     musicPlayerFrame.src = '';
     musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
     musicPlayerRequester.textContent = '';
+    lastChatRequester = '';
     musicPlayerCard.classList.add('hidden');
     mediaSessionIdle();
   }
@@ -1676,21 +1758,22 @@
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => {
       if (currentAudio) currentAudio.pause();
-      if (radioPlayer && !radioPlayer.paused) radioPlayer.pause();
+      if (radioPlayer && !radioPlayer.paused) pauseCurrentRadio();
+      if (ttsProvider.value === 'browser' && speechSynthesis.speaking) speechSynthesis.pause();
       startKeepAliveAudio();
-      mediaSessionIdle();
+      updateActiveMediaSession();
     });
     navigator.mediaSession.setActionHandler('play', () => {
       startKeepAliveAudio();
       requestWakeLock();
       if (currentAudio) currentAudio.play().catch(() => {});
       if (radioPlayer && currentRadioStreamUrl && radioPlayer.paused) {
-        radioPlayer.play().catch(scheduleRadioReconnect);
+        playCurrentRadio();
       }
       if (!isSpeaking && ttsQueue.length > 0) processQueue();
       if (ttsProvider.value === 'browser' && speechSynthesis.paused) speechSynthesis.resume();
       recoverConnectionIfNeeded();
-      mediaSessionIdle();
+      updateActiveMediaSession();
     });
     navigator.mediaSession.setActionHandler('stop', () => {
       ttsPlaybackToken++;
@@ -1701,14 +1784,14 @@
       currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
-      clearRadioReconnect();
-      currentRadioStreamUrl = '';
-      currentRadioTitle = '';
-      radioReconnectAttempts = 0;
-      if (radioPlayer) radioPlayer.pause();
+      stopCurrentRadio();
       mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
+      if (radioShouldPlay && currentRadioStreamUrl) {
+        playAdjacentRadio(1);
+        return;
+      }
       ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -1716,6 +1799,27 @@
       isSpeaking = false;
       processQueue();
     });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(-1);
+    });
+    navigator.mediaSession.setActionHandler('seekforward', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(1);
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(-1);
+    });
+  }
+
+  function updateActiveMediaSession() {
+    if (currentTtsLabel) {
+      updateMediaSession(currentTtsLabel);
+      return;
+    }
+    if (currentRadioStreamUrl) {
+      updateMediaSession(`Radio: ${currentRadioTitle || 'En vivo'}`);
+      return;
+    }
+    mediaSessionIdle();
   }
 
   function updateMediaSession(text) {
@@ -1727,10 +1831,10 @@
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: text.length > 60 ? text.slice(0, 57) + '…' : text,
-        artist: 'Lively',
+        artist: lastChatRequester && text.startsWith('YouTube:') ? `Solicitado por @${lastChatRequester}` : 'Lively',
         album: currentUsername ? `@${currentUsername}` : 'Live Stream'
       });
-      navigator.mediaSession.playbackState = 'playing';
+      navigator.mediaSession.playbackState = text.startsWith('Radio:') && !radioShouldPlay ? 'paused' : 'playing';
     } catch {}
   }
 
@@ -1743,7 +1847,7 @@
         artist: 'Lively',
         album: currentUsername ? `@${currentUsername}` : 'Live / Radio / Alertas'
       });
-      navigator.mediaSession.playbackState = 'playing';
+      navigator.mediaSession.playbackState = currentRadioTitle && !radioShouldPlay ? 'paused' : 'playing';
     } catch {}
   }
 

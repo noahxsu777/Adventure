@@ -1042,6 +1042,36 @@ body::after {
   width: 100%;
   accent-color: var(--accent);
 }
+.radio-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+.radio-control-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+.radio-control-main {
+  width: 58px;
+  height: 58px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  font-size: 22px;
+}
+.radio-control-btn:active {
+  transform: scale(0.95);
+}
 .radio-actions,
 .radio-custom-row {
   display: flex;
