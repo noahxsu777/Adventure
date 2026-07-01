@@ -4,17 +4,33 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: fly-deploy-main
+  cancel-in-progress: true
 
 jobs:
   deploy:
     name: Deploy
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
+      - name: Verify Fly.io token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::Missing FLY_API_TOKEN repository secret. Add a Fly.io deploy token in GitHub Actions secrets before deploying from main."
+            exit 1
+          fi
+          flyctl auth whoami
+
       - name: Deploy
-        run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only --config fly.toml --app live777
