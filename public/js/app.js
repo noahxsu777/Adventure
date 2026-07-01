@@ -107,7 +107,13 @@
   const seenIds = new Set();
   const BASE_RECONNECT_DELAY = 3000;
   const MAX_RECONNECT_DELAY = 30000;
+  const KEEPALIVE_INTERVAL_MS = 15000;
+  const KEEPALIVE_STALE_MS = 45000;
   let wakeLock = null;
+  let keepAliveTimer = null;
+  let lastPongAt = Date.now();
+  let keepAliveOscillator = null;
+  let keepAliveGain = null;
 
   /* ---------- Service Worker Registration ---------- */
   if ('serviceWorker' in navigator) {
@@ -134,10 +140,78 @@
     if (wakeLock) { wakeLock.release(); wakeLock = null; }
   }
 
+  function startKeepAliveAudio() {
+    if (keepAliveOscillator || !ttsEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      keepAliveGain = ctx.createGain();
+      keepAliveGain.gain.value = 0.00001;
+      keepAliveOscillator = ctx.createOscillator();
+      keepAliveOscillator.frequency.value = 18;
+      keepAliveOscillator.connect(keepAliveGain);
+      keepAliveGain.connect(ctx.destination);
+      keepAliveOscillator.start();
+      ctx.resume().catch(() => {});
+    } catch {
+      keepAliveOscillator = null;
+      keepAliveGain = null;
+    }
+  }
+
+  function stopKeepAliveAudio() {
+    if (keepAliveOscillator) {
+      try { keepAliveOscillator.stop(); } catch {}
+      try { keepAliveOscillator.disconnect(); } catch {}
+    }
+    if (keepAliveGain) {
+      try { keepAliveGain.disconnect(); } catch {}
+    }
+    keepAliveOscillator = null;
+    keepAliveGain = null;
+  }
+
+  function startConnectionKeepAlive() {
+    stopConnectionKeepAlive();
+    lastPongAt = Date.now();
+    requestWakeLock();
+    startKeepAliveAudio();
+    keepAliveTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'keepalive', timestamp: Date.now() }));
+      } catch {}
+      if (Date.now() - lastPongAt > KEEPALIVE_STALE_MS) {
+        try { ws.close(); } catch {}
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  function stopConnectionKeepAlive() {
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+
+  function recoverConnectionIfNeeded() {
+    if (userDisconnected || !currentUsername) return;
+    requestWakeLock();
+    startKeepAliveAudio();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      setStatus('reconnecting');
+      connectWs(currentUsername, currentSessionMode);
+    }
+  }
+
   /* Re-acquire wake lock on visibility change */
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && ttsEnabled) {
-      requestWakeLock();
+    if (ttsEnabled) {
+      if (document.visibilityState === 'visible') {
+        recoverConnectionIfNeeded();
+      } else if (currentUsername && !userDisconnected) {
+        startKeepAliveAudio();
+      }
     }
   });
 
@@ -789,6 +863,7 @@
     ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
     if (ttsEnabled) {
       requestWakeLock();
+      startKeepAliveAudio();
       mediaSessionIdle();
     } else {
       speechSynthesis.cancel();
@@ -797,6 +872,7 @@
       isSpeaking = false;
       renderQueue();
       releaseWakeLock();
+      stopKeepAliveAudio();
       updateMediaSession(null);
     }
   });
@@ -813,16 +889,22 @@
 
     ws.addEventListener('open', () => {
       reconnectAttempts = 0;
+      startConnectionKeepAlive();
       ws.send(JSON.stringify({ type: 'connect', username, mode: mode || connectionMode }));
     });
 
     ws.addEventListener('message', (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === 'pong') {
+        lastPongAt = Date.now();
+        return;
+      }
       handleEvent(msg);
     });
 
     ws.addEventListener('close', () => {
+      stopConnectionKeepAlive();
       if (!userDisconnected && currentUsername) {
         setStatus('reconnecting');
         reconnectAttempts++;
@@ -853,6 +935,8 @@
     isSpeaking = false;
     renderQueue();
     stopMusicPlayer();
+    stopConnectionKeepAlive();
+    stopKeepAliveAudio();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -1761,9 +1845,13 @@
   /* Resume AudioContext if suspended (e.g. iOS/Android background) */
   document.addEventListener('visibilitychange', () => {
     if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume();
+      audioCtx.resume().catch(() => {});
     }
+    recoverConnectionIfNeeded();
   });
+
+  window.addEventListener('focus', recoverConnectionIfNeeded);
+  window.addEventListener('online', recoverConnectionIfNeeded);
 
   /* Request wake lock on load if TTS is enabled */
   if (ttsEnabled) {

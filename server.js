@@ -794,6 +794,10 @@ wss.on('connection', (ws) => {
       });
     }
 
+    if (msg.type === 'keepalive') {
+      broadcast(ws, 'pong', { timestamp: Date.now() });
+    }
+
     if (msg.type === 'disconnect') {
       const entry = clients.get(ws);
       if (entry) {
