@@ -348,6 +348,55 @@
     try { localStorage.setItem('uploadedSounds', JSON.stringify(uploadedSounds)); } catch {}
   }
 
+  function appendUploadedSoundOptions(select, currentSound) {
+    const entries = Object.entries(uploadedSounds);
+    if (entries.length === 0) return;
+    const upGroup = document.createElement('optgroup');
+    upGroup.label = '📁 Uploaded';
+    entries.forEach(([key, entry]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = entry?.name || key.replace(/^up:/, '');
+      if (currentSound === key) opt.selected = true;
+      upGroup.appendChild(opt);
+    });
+    select.appendChild(upGroup);
+  }
+
+  function refreshSoundSelectors() {
+    renderFollowSoundOptions();
+    renderGiftGallery(giftSearch ? giftSearch.value : '');
+    renderTriggers();
+  }
+
+  function removeUploadedSound(soundId) {
+    delete uploadedSounds[soundId];
+    saveUploadedSounds();
+
+    let giftChanged = false;
+    Object.keys(giftSounds).forEach((gid) => {
+      if (giftSounds[gid] === soundId) {
+        delete giftSounds[gid];
+        giftChanged = true;
+      }
+    });
+    if (giftChanged) saveGiftSounds();
+
+    let triggerChanged = false;
+    Object.keys(triggerSounds).forEach((tid) => {
+      if (triggerSounds[tid] === soundId) {
+        delete triggerSounds[tid];
+        triggerChanged = true;
+      }
+    });
+    if (triggerChanged) saveTriggerSounds();
+
+    if (followSound === soundId) {
+      followSound = '';
+      saveFollowSoundConfig();
+    }
+  }
+
   /* Currently targeted gift ID for sound modal */
   let soundModalGiftId = null;
   let soundModalTriggerId = null;
@@ -789,9 +838,9 @@
           delB.textContent = '✕';
           delB.addEventListener('click', (e) => {
             e.stopPropagation();
-            delete uploadedSounds[k];
-            saveUploadedSounds();
+            removeUploadedSound(k);
             renderModalSounds(container, sounds, searchQuery);
+            refreshSoundSelectors();
           });
           row.appendChild(delB);
 
@@ -949,6 +998,7 @@
         const key = 'up:' + Date.now() + '_' + file.name;
         uploadedSounds[key] = { name: file.name, dataUrl: reader.result };
         saveUploadedSounds();
+        refreshSoundSelectors();
         /* Refresh modal if open */
         if (!soundModal.classList.contains('hidden')) {
           const q = soundModalSearch.value.trim();
@@ -991,6 +1041,7 @@
       });
       followSoundSelect.appendChild(popGroup);
     }
+    appendUploadedSoundOptions(followSoundSelect, followSound);
     if (followSound && followSound.startsWith('mi:') && !cachedPopularSounds.some(s => 'mi:' + s.mp3 === followSound)) {
       const customGroup = document.createElement('optgroup');
       customGroup.label = '🌐 MyInstants';
@@ -999,15 +1050,6 @@
       opt.textContent = `🔊 ${localStorage.getItem('miName:' + followSound) || 'Custom sound'}`;
       customGroup.appendChild(opt);
       followSoundSelect.appendChild(customGroup);
-    }
-    if (followSound && followSound.startsWith('up:')) {
-      const upGroup = document.createElement('optgroup');
-      upGroup.label = '📁 Uploaded';
-      const opt = document.createElement('option');
-      opt.value = followSound;
-      opt.textContent = uploadedSounds[followSound]?.name || followSound.replace(/^up:/, '');
-      upGroup.appendChild(opt);
-      followSoundSelect.appendChild(upGroup);
     }
     if (followSound) followSoundSelect.value = followSound;
     if (followSoundEnabledToggle) followSoundEnabledToggle.checked = !!followSoundEnabled;
@@ -1553,6 +1595,7 @@
         });
         sel.appendChild(popGroup);
       }
+      appendUploadedSoundOptions(sel, currentSound);
 
       /* If a MyInstants sound is assigned that's not in popular, show it as option */
       if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
@@ -1568,7 +1611,7 @@
       }
 
       /* Backward compat: if a built-in oscillator sound is assigned, show it */
-      if (currentSound && !currentSound.startsWith('mi:')) {
+      if (currentSound && !currentSound.startsWith('mi:') && !currentSound.startsWith('up:')) {
         const legacyGroup = document.createElement('optgroup');
         legacyGroup.label = '🎵 Legacy';
         const ls = ALERT_SOUNDS.find(a => a.id === currentSound);
@@ -1699,6 +1742,7 @@
         });
         sel.appendChild(popGroup);
       }
+      appendUploadedSoundOptions(sel, currentSound);
 
       if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
         const miGroup = document.createElement('optgroup');
