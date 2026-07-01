@@ -1667,8 +1667,8 @@
   populateVoices();
 
   function speakViaAudio(url, text) {
-  function speakViaAudio(url, text) {
     const audio = new Audio(url);
+    const activeToken = ttsPlaybackToken;
     currentAudio = audio;
     audio.volume = parseFloat(volumeSlider.value);
     audio.playbackRate = parseFloat(speedSlider.value);
