@@ -59,6 +59,18 @@
   const soundLibrary    = $('#soundLibrary');
   const triggersGrid    = $('#triggersGrid');
 
+  const radioPlayer       = $('#radioPlayer');
+  const radioNowPlaying   = $('#radioNowPlaying');
+  const radioPlayerCard   = $('.radio-player-card');
+  const radioPlayPauseBtn = $('#radioPlayPauseBtn');
+  const radioPrevBtn      = $('#radioPrevBtn');
+  const radioNextBtn      = $('#radioNextBtn');
+  const radioStopBtn      = $('#radioStopBtn');
+  const radioVolumeSlider = $('#radioVolumeSlider');
+  const radioCustomUrl    = $('#radioCustomUrl');
+  const radioLoadBtn      = $('#radioLoadBtn');
+  const radioMessage      = $('#radioMessage');
+
   /* Sound Browser Modal */
   const soundModal        = $('#soundModal');
   const soundModalClose   = $('#soundModalClose');
@@ -87,6 +99,9 @@
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
+  const queuedTtsLabels = new Set();
+  let currentTtsLabel = null;
+  let ttsPlaybackToken = 0;
   let isSpeaking = false;
   let ttsEnabled = true;
   let userDisconnected = false;
@@ -98,7 +113,24 @@
   const seenIds = new Set();
   const BASE_RECONNECT_DELAY = 3000;
   const MAX_RECONNECT_DELAY = 30000;
+  const KEEPALIVE_INTERVAL_MS = 15000;
+  const KEEPALIVE_STALE_MS = 45000;
   let wakeLock = null;
+  let keepAliveTimer = null;
+  let lastPongAt = Date.now();
+  let keepAliveOscillator = null;
+  let keepAliveGain = null;
+  let keepAliveAudio = null;
+  let keepAliveDestination = null;
+  let wsReconnectTimer = null;
+  let currentRadioStreamUrl = '';
+  let currentRadioTitle = '';
+  let radioReconnectTimer = null;
+  let radioReconnectAttempts = 0;
+  let currentRadioStationIndex = -1;
+  let radioShouldPlay = false;
+  let currentRadioUseProxy = false;
+  let lastChatRequester = '';
 
   /* ---------- Service Worker Registration ---------- */
   if ('serviceWorker' in navigator) {
@@ -125,10 +157,134 @@
     if (wakeLock) { wakeLock.release(); wakeLock = null; }
   }
 
+  function startKeepAliveAudio() {
+    if (keepAliveOscillator && keepAliveAudio && !keepAliveAudio.paused) return;
+    try {
+      const ctx = getAudioCtx();
+      if (!keepAliveOscillator) {
+        keepAliveGain = ctx.createGain();
+        keepAliveGain.gain.value = 0.00001;
+        keepAliveDestination = ctx.createMediaStreamDestination();
+        keepAliveOscillator = ctx.createOscillator();
+        keepAliveOscillator.frequency.value = 18;
+        keepAliveOscillator.connect(keepAliveGain);
+        keepAliveGain.connect(ctx.destination);
+        keepAliveGain.connect(keepAliveDestination);
+        keepAliveOscillator.start();
+      }
+      if (!keepAliveAudio && keepAliveDestination) {
+        keepAliveAudio = new Audio();
+        keepAliveAudio.srcObject = keepAliveDestination.stream;
+        keepAliveAudio.loop = true;
+        keepAliveAudio.volume = 0.01;
+        keepAliveAudio.setAttribute('playsinline', '');
+      }
+      ctx.resume().then(() => {
+        if (keepAliveAudio) keepAliveAudio.play().catch(() => {});
+      }).catch(() => {});
+      mediaSessionIdle();
+    } catch {
+      keepAliveOscillator = null;
+      keepAliveGain = null;
+      keepAliveAudio = null;
+      keepAliveDestination = null;
+    }
+  }
+
+  function stopKeepAliveAudio() {
+    if (keepAliveAudio) {
+      try { keepAliveAudio.pause(); } catch {}
+      keepAliveAudio.srcObject = null;
+    }
+    if (keepAliveOscillator) {
+      try { keepAliveOscillator.stop(); } catch {}
+      try { keepAliveOscillator.disconnect(); } catch {}
+    }
+    if (keepAliveGain) {
+      try { keepAliveGain.disconnect(); } catch {}
+    }
+    keepAliveOscillator = null;
+    keepAliveGain = null;
+    keepAliveAudio = null;
+    keepAliveDestination = null;
+  }
+
+  function primeAlwaysPlayingState() {
+    startKeepAliveAudio();
+    requestWakeLock();
+    resumeActivePlayback();
+  }
+
+  ['click', 'touchstart', 'pointerdown', 'keydown'].forEach((eventName) => {
+    document.addEventListener(eventName, primeAlwaysPlayingState, { once: true, passive: true });
+  });
+
+  function startConnectionKeepAlive() {
+    stopConnectionKeepAlive();
+    lastPongAt = Date.now();
+    requestWakeLock();
+    startKeepAliveAudio();
+    keepAliveTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'keepalive', timestamp: Date.now() }));
+      } catch {}
+      if (Date.now() - lastPongAt > KEEPALIVE_STALE_MS) {
+        try { ws.close(); } catch {}
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  function stopConnectionKeepAlive() {
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+
+  function recoverConnectionIfNeeded() {
+    if (userDisconnected || !currentUsername) return;
+    requestWakeLock();
+    startKeepAliveAudio();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      setStatus('reconnecting');
+      connectWs(currentUsername, currentSessionMode);
+    }
+  }
+
+  function resumeActivePlayback() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    if (keepAliveAudio && keepAliveAudio.paused) {
+      keepAliveAudio.play().catch(() => {});
+    }
+    if (currentAudio && currentAudio.paused && !currentAudio.ended) {
+      currentAudio.play().catch(() => {});
+    }
+    if (radioPlayer && radioShouldPlay && currentRadioStreamUrl && radioPlayer.paused && !radioPlayer.ended) {
+      radioPlayer.play().catch(() => {});
+    }
+    if (ttsProvider.value === 'browser' && isSpeaking && speechSynthesis.paused) {
+      speechSynthesis.resume();
+    }
+    if (currentTtsLabel) {
+      updateMediaSession(currentTtsLabel);
+    } else {
+      updateActiveMediaSession();
+    }
+  }
+
   /* Re-acquire wake lock on visibility change */
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && ttsEnabled) {
-      requestWakeLock();
+    if (document.visibilityState === 'visible') {
+      recoverConnectionIfNeeded();
+      startKeepAliveAudio();
+      resumeActivePlayback();
+    } else {
+      startKeepAliveAudio();
+      mediaSessionIdle();
     }
   });
 
@@ -190,6 +346,55 @@
   } catch {}
   function saveUploadedSounds() {
     try { localStorage.setItem('uploadedSounds', JSON.stringify(uploadedSounds)); } catch {}
+  }
+
+  function appendUploadedSoundOptions(select, currentSound) {
+    const entries = Object.entries(uploadedSounds);
+    if (entries.length === 0) return;
+    const upGroup = document.createElement('optgroup');
+    upGroup.label = '📁 Uploaded';
+    entries.forEach(([key, entry]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = entry?.name || key.replace(/^up:/, '');
+      if (currentSound === key) opt.selected = true;
+      upGroup.appendChild(opt);
+    });
+    select.appendChild(upGroup);
+  }
+
+  function refreshSoundSelectors() {
+    renderFollowSoundOptions();
+    renderGiftGallery(giftSearch ? giftSearch.value : '');
+    renderTriggers();
+  }
+
+  function removeUploadedSound(soundId) {
+    delete uploadedSounds[soundId];
+    saveUploadedSounds();
+
+    let giftChanged = false;
+    Object.keys(giftSounds).forEach((gid) => {
+      if (giftSounds[gid] === soundId) {
+        delete giftSounds[gid];
+        giftChanged = true;
+      }
+    });
+    if (giftChanged) saveGiftSounds();
+
+    let triggerChanged = false;
+    Object.keys(triggerSounds).forEach((tid) => {
+      if (triggerSounds[tid] === soundId) {
+        delete triggerSounds[tid];
+        triggerChanged = true;
+      }
+    });
+    if (triggerChanged) saveTriggerSounds();
+
+    if (followSound === soundId) {
+      followSound = '';
+      saveFollowSoundConfig();
+    }
   }
 
   /* Currently targeted gift ID for sound modal */
@@ -364,6 +569,212 @@
     });
   });
 
+  /* ---------- Radio player ---------- */
+  function setRadioMessage(message) {
+    if (radioMessage) radioMessage.textContent = message || '';
+  }
+
+  function clearRadioReconnect() {
+    if (radioReconnectTimer) clearTimeout(radioReconnectTimer);
+    radioReconnectTimer = null;
+  }
+
+  function getRadioPlaybackUrl(streamUrl) {
+    const safeStreamUrl = getSafeAudioUrl(streamUrl);
+    if (!safeStreamUrl) return '';
+    return currentRadioUseProxy ? `/api/radio-proxy?url=${encodeURIComponent(safeStreamUrl)}` : safeStreamUrl;
+  }
+
+  function updateRadioControls() {
+    if (!radioPlayPauseBtn || !radioPlayer) return;
+    const playing = radioShouldPlay && !radioPlayer.paused && !radioPlayer.ended;
+    radioPlayPauseBtn.textContent = playing ? '⏸' : '▶';
+    radioPlayPauseBtn.setAttribute('aria-label', playing ? 'Pausar radio' : 'Reproducir radio');
+  }
+
+  function playCurrentRadio() {
+    if (!radioPlayer || !currentRadioStreamUrl) return;
+    radioShouldPlay = true;
+    primeAlwaysPlayingState();
+    radioPlayer.play().catch((err) => {
+      setRadioMessage('Presiona ▶ para iniciar la radio.');
+      if (err?.name !== 'NotAllowedError') scheduleRadioReconnect();
+    });
+    updateRadioControls();
+  }
+
+  function pauseCurrentRadio() {
+    if (!radioPlayer) return;
+    radioShouldPlay = false;
+    radioPlayer.pause();
+    updateActiveMediaSession();
+    updateRadioControls();
+  }
+
+  function stopCurrentRadio() {
+    if (!radioPlayer || !radioNowPlaying) return;
+    clearRadioReconnect();
+    radioShouldPlay = false;
+    currentRadioStreamUrl = '';
+    currentRadioTitle = '';
+    currentRadioStationIndex = -1;
+    currentRadioUseProxy = false;
+    radioReconnectAttempts = 0;
+    radioPlayer.pause();
+    radioPlayer.removeAttribute('src');
+    radioPlayer.load();
+    radioNowPlaying.textContent = 'Selecciona una estación';
+    document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
+    setRadioMessage('');
+    updateRadioControls();
+    mediaSessionIdle();
+  }
+
+  function playAdjacentRadio(direction) {
+    const stations = Array.from(document.querySelectorAll('.radio-station'));
+    if (!stations.length) return;
+    const current = currentRadioStationIndex >= 0 ? currentRadioStationIndex : 0;
+    const next = (current + direction + stations.length) % stations.length;
+    const btn = stations[next];
+    setRadioStation(btn.dataset.title, btn.dataset.stream, btn, next);
+  }
+
+  function scheduleRadioReconnect() {
+    if (!radioPlayer || !radioShouldPlay || !currentRadioStreamUrl || radioReconnectTimer) return;
+    radioReconnectAttempts++;
+    const delay = Math.min(2000 * Math.pow(1.5, radioReconnectAttempts - 1), 30000);
+    setRadioMessage(`Reconectando radio en ${Math.ceil(delay / 1000)}s…`);
+    radioReconnectTimer = setTimeout(() => {
+      radioReconnectTimer = null;
+      if (!currentRadioStreamUrl) return;
+      radioPlayer.src = getRadioPlaybackUrl(currentRadioStreamUrl);
+      radioPlayer.load();
+      primeAlwaysPlayingState();
+      radioPlayer.play().catch(() => {
+        scheduleRadioReconnect();
+      });
+    }, delay);
+  }
+
+  function setRadioStation(title, streamUrl, stationButton, stationIndex = -1) {
+    if (!radioPlayer || !radioNowPlaying) return;
+    const safeStreamUrl = getSafeAudioUrl(streamUrl);
+    if (!safeStreamUrl) {
+      setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
+      return;
+    }
+
+    clearRadioReconnect();
+    radioShouldPlay = true;
+    currentRadioStreamUrl = safeStreamUrl;
+    currentRadioTitle = title;
+    currentRadioStationIndex = stationIndex;
+    currentRadioUseProxy = !!stationButton;
+    radioReconnectAttempts = 0;
+    radioPlayer.src = getRadioPlaybackUrl(safeStreamUrl);
+    radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
+    radioNowPlaying.textContent = title;
+    setRadioMessage('');
+    primeAlwaysPlayingState();
+
+    document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
+    if (stationButton) stationButton.classList.add('active');
+
+    playCurrentRadio();
+  }
+
+  function getSafeAudioUrl(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+    } catch {
+      return '';
+    }
+    return '';
+  }
+
+  if (radioPlayer) {
+    document.querySelectorAll('.radio-station').forEach((btn, index) => {
+      btn.addEventListener('click', () => {
+        setRadioStation(btn.dataset.title, btn.dataset.stream, btn, index);
+      });
+    });
+
+    radioPlayer.addEventListener('play', () => {
+      clearRadioReconnect();
+      radioReconnectAttempts = 0;
+      if (radioPlayerCard) radioPlayerCard.classList.add('playing');
+      updateMediaSession(`Radio: ${currentRadioTitle || radioNowPlaying.textContent || 'En vivo'}`);
+      updateRadioControls();
+    });
+
+    radioPlayer.addEventListener('pause', () => {
+      if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
+      updateRadioControls();
+    });
+
+    radioPlayer.addEventListener('error', () => {
+      if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
+      updateRadioControls();
+      if (currentRadioStreamUrl && radioShouldPlay) {
+        scheduleRadioReconnect();
+      } else {
+        setRadioMessage('No se pudo cargar esta estación. Prueba otra URL.');
+      }
+    });
+
+    ['stalled', 'suspend', 'waiting'].forEach((eventName) => {
+      radioPlayer.addEventListener(eventName, () => {
+        if (currentRadioStreamUrl && radioShouldPlay && !radioPlayer.paused) scheduleRadioReconnect();
+      });
+    });
+
+    if (radioPlayPauseBtn) {
+      radioPlayPauseBtn.addEventListener('click', () => {
+        if (!currentRadioStreamUrl) {
+          playAdjacentRadio(1);
+          return;
+        }
+        if (radioPlayer.paused || radioPlayer.ended) playCurrentRadio();
+        else pauseCurrentRadio();
+      });
+    }
+
+    if (radioPrevBtn) {
+      radioPrevBtn.addEventListener('click', () => playAdjacentRadio(-1));
+    }
+
+    if (radioNextBtn) {
+      radioNextBtn.addEventListener('click', () => playAdjacentRadio(1));
+    }
+
+    if (radioStopBtn) {
+      radioStopBtn.addEventListener('click', stopCurrentRadio);
+    }
+
+    if (radioVolumeSlider) {
+      radioVolumeSlider.addEventListener('input', () => {
+        radioPlayer.volume = parseFloat(radioVolumeSlider.value);
+      });
+    }
+
+    if (radioLoadBtn && radioCustomUrl) {
+      radioLoadBtn.addEventListener('click', () => {
+        const streamUrl = radioCustomUrl.value.trim();
+        if (getYouTubeVideoId(streamUrl)) {
+          playYouTubeSearch(streamUrl, '');
+          setRadioMessage('YouTube se abrió en el reproductor superior.');
+          return;
+        }
+        if (!getSafeAudioUrl(streamUrl)) {
+          setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
+          return;
+        }
+        setRadioStation('Stream personalizado', streamUrl);
+      });
+    }
+  }
+
   /* ---------- Sound Browser Modal ---------- */
 
   function renderModalSounds(container, sounds, searchQuery) {
@@ -427,9 +838,9 @@
           delB.textContent = '✕';
           delB.addEventListener('click', (e) => {
             e.stopPropagation();
-            delete uploadedSounds[k];
-            saveUploadedSounds();
+            removeUploadedSound(k);
             renderModalSounds(container, sounds, searchQuery);
+            refreshSoundSelectors();
           });
           row.appendChild(delB);
 
@@ -587,6 +998,7 @@
         const key = 'up:' + Date.now() + '_' + file.name;
         uploadedSounds[key] = { name: file.name, dataUrl: reader.result };
         saveUploadedSounds();
+        refreshSoundSelectors();
         /* Refresh modal if open */
         if (!soundModal.classList.contains('hidden')) {
           const q = soundModalSearch.value.trim();
@@ -629,6 +1041,7 @@
       });
       followSoundSelect.appendChild(popGroup);
     }
+    appendUploadedSoundOptions(followSoundSelect, followSound);
     if (followSound && followSound.startsWith('mi:') && !cachedPopularSounds.some(s => 'mi:' + s.mp3 === followSound)) {
       const customGroup = document.createElement('optgroup');
       customGroup.label = '🌐 MyInstants';
@@ -637,15 +1050,6 @@
       opt.textContent = `🔊 ${localStorage.getItem('miName:' + followSound) || 'Custom sound'}`;
       customGroup.appendChild(opt);
       followSoundSelect.appendChild(customGroup);
-    }
-    if (followSound && followSound.startsWith('up:')) {
-      const upGroup = document.createElement('optgroup');
-      upGroup.label = '📁 Uploaded';
-      const opt = document.createElement('option');
-      opt.value = followSound;
-      opt.textContent = uploadedSounds[followSound]?.name || followSound.replace(/^up:/, '');
-      upGroup.appendChild(opt);
-      followSoundSelect.appendChild(upGroup);
     }
     if (followSound) followSoundSelect.value = followSound;
     if (followSoundEnabledToggle) followSoundEnabledToggle.checked = !!followSoundEnabled;
@@ -695,15 +1099,18 @@
     ttsToggleBtn.textContent = ttsEnabled ? '🔊 Chat TTS Active' : '🔇 Enable Chat TTS';
     if (ttsEnabled) {
       requestWakeLock();
+      startKeepAliveAudio();
       mediaSessionIdle();
     } else {
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
+      queuedTtsLabels.clear();
+      currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
-      releaseWakeLock();
-      updateMediaSession(null);
+      mediaSessionIdle();
     }
   });
 
@@ -719,21 +1126,31 @@
 
     ws.addEventListener('open', () => {
       reconnectAttempts = 0;
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+      startConnectionKeepAlive();
       ws.send(JSON.stringify({ type: 'connect', username, mode: mode || connectionMode }));
     });
 
     ws.addEventListener('message', (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === 'pong') {
+        lastPongAt = Date.now();
+        return;
+      }
       handleEvent(msg);
     });
 
     ws.addEventListener('close', () => {
+      stopConnectionKeepAlive();
       if (!userDisconnected && currentUsername) {
         setStatus('reconnecting');
         reconnectAttempts++;
         const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
-        setTimeout(() => {
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = setTimeout(() => {
+          wsReconnectTimer = null;
           if (!userDisconnected && currentUsername) {
             connectWs(currentUsername, currentSessionMode);
           }
@@ -752,13 +1169,20 @@
     userDisconnected = true;
     currentUsername = '';
     reconnectAttempts = 0;
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
     /* Stop all TTS on disconnect */
+    ttsPlaybackToken++;
     speechSynthesis.cancel();
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     ttsQueue.length = 0;
+    queuedTtsLabels.clear();
+    currentTtsLabel = null;
     isSpeaking = false;
     renderQueue();
+    stopConnectionKeepAlive();
     stopMusicPlayer();
+    mediaSessionIdle();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -792,16 +1216,50 @@
     return (m[1] || '').trim();
   }
 
+  function getYouTubeVideoId(value) {
+    const text = String(value || '').trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+    try {
+      const url = new URL(text);
+      const host = url.hostname.toLowerCase();
+      const isYouTubeHost = host === 'youtube.com' || host.endsWith('.youtube.com');
+      const isShortYouTubeHost = host === 'youtu.be' || host.endsWith('.youtu.be');
+      if (isShortYouTubeHost) return url.pathname.slice(1).split('/')[0] || '';
+      if (isYouTubeHost) {
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2] || '';
+        if (url.pathname.startsWith('/embed/')) return url.pathname.split('/')[2] || '';
+        return url.searchParams.get('v') || '';
+      }
+    } catch {
+      return '';
+    }
+    return '';
+  }
+
+  function getYouTubeEmbedSrc(query) {
+    const origin = encodeURIComponent(window.location.origin);
+    const videoId = getYouTubeVideoId(query);
+    if (videoId) {
+      return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}`;
+    }
+    return `https://www.youtube.com/embed?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}&listType=search&list=${encodeURIComponent(query)}`;
+  }
+
   function playYouTubeSearch(query, user) {
     if (!query) {
       appendSystem('Uso: !play <nombre de la canción>');
       return;
     }
-    const src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
-    musicPlayerFrame.src = src;
+    primeAlwaysPlayingState();
+    lastChatRequester = user || '';
+    musicPlayerFrame.src = getYouTubeEmbedSrc(query);
     musicPlayerTitle.textContent = `🎵 ${query}`;
-    musicPlayerRequester.textContent = user ? `Solicitada por @${user}` : '';
+    musicPlayerRequester.textContent = user
+      ? `Solicitada por @${user} · Si no inicia, toca ▶ en YouTube`
+      : 'Si no inicia, toca ▶ en YouTube';
     musicPlayerCard.classList.remove('hidden');
+    if (user) appendSystem(`🎵 @${user} solicitó: ${query}`);
+    updateMediaSession(`YouTube: ${query}`);
   }
 
   function stopMusicPlayer() {
@@ -809,7 +1267,9 @@
     musicPlayerFrame.src = '';
     musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
     musicPlayerRequester.textContent = '';
+    lastChatRequester = '';
     musicPlayerCard.classList.add('hidden');
+    mediaSessionIdle();
   }
 
   if (musicPlayerClose) {
@@ -1135,6 +1595,7 @@
         });
         sel.appendChild(popGroup);
       }
+      appendUploadedSoundOptions(sel, currentSound);
 
       /* If a MyInstants sound is assigned that's not in popular, show it as option */
       if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
@@ -1150,7 +1611,7 @@
       }
 
       /* Backward compat: if a built-in oscillator sound is assigned, show it */
-      if (currentSound && !currentSound.startsWith('mi:')) {
+      if (currentSound && !currentSound.startsWith('mi:') && !currentSound.startsWith('up:')) {
         const legacyGroup = document.createElement('optgroup');
         legacyGroup.label = '🎵 Legacy';
         const ls = ALERT_SOUNDS.find(a => a.id === currentSound);
@@ -1281,6 +1742,7 @@
         });
         sel.appendChild(popGroup);
       }
+      appendUploadedSoundOptions(sel, currentSound);
 
       if (currentSound && currentSound.startsWith('mi:') && !popularKeys.has(currentSound)) {
         const miGroup = document.createElement('optgroup');
@@ -1340,53 +1802,97 @@
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => {
       if (currentAudio) currentAudio.pause();
-      navigator.mediaSession.playbackState = 'paused';
+      if (radioPlayer && !radioPlayer.paused) pauseCurrentRadio();
+      if (ttsProvider.value === 'browser' && speechSynthesis.speaking) speechSynthesis.pause();
+      startKeepAliveAudio();
+      updateActiveMediaSession();
     });
     navigator.mediaSession.setActionHandler('play', () => {
-      if (currentAudio) currentAudio.play();
-      navigator.mediaSession.playbackState = 'playing';
+      startKeepAliveAudio();
+      requestWakeLock();
+      if (currentAudio) currentAudio.play().catch(() => {});
+      if (radioPlayer && currentRadioStreamUrl && radioPlayer.paused) {
+        playCurrentRadio();
+      }
+      if (!isSpeaking && ttsQueue.length > 0) processQueue();
+      if (ttsProvider.value === 'browser' && speechSynthesis.paused) speechSynthesis.resume();
+      recoverConnectionIfNeeded();
+      updateActiveMediaSession();
     });
     navigator.mediaSession.setActionHandler('stop', () => {
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
+      queuedTtsLabels.clear();
+      currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
-      updateMediaSession(null);
+      stopCurrentRadio();
+      mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
+      if (radioShouldPlay && currentRadioStreamUrl) {
+        playAdjacentRadio(1);
+        return;
+      }
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(-1);
+    });
+    navigator.mediaSession.setActionHandler('seekforward', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(1);
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', () => {
+      if (currentRadioStreamUrl) playAdjacentRadio(-1);
+    });
+  }
+
+  function updateActiveMediaSession() {
+    if (currentTtsLabel) {
+      updateMediaSession(currentTtsLabel);
+      return;
+    }
+    if (currentRadioStreamUrl) {
+      updateMediaSession(`Radio: ${currentRadioTitle || 'En vivo'}`);
+      return;
+    }
+    mediaSessionIdle();
   }
 
   function updateMediaSession(text) {
     if (!('mediaSession' in navigator)) return;
     if (!text) {
-      /* TTS disabled — clear session completely */
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
+      mediaSessionIdle();
       return;
     }
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: text.length > 60 ? text.slice(0, 57) + '…' : text,
-      artist: 'Lively',
-      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
-    });
-    navigator.mediaSession.playbackState = 'playing';
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: text.length > 60 ? text.slice(0, 57) + '…' : text,
+        artist: lastChatRequester && text.startsWith('YouTube:') ? `Solicitado por @${lastChatRequester}` : 'Lively',
+        album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+      });
+      navigator.mediaSession.playbackState = text.startsWith('Radio:') && !radioShouldPlay ? 'paused' : 'playing';
+    } catch {}
   }
 
   /* Show idle state in media session when queue drains */
   function mediaSessionIdle() {
-    if (!('mediaSession' in navigator) || !ttsEnabled) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: 'Waiting for messages…',
-      artist: 'Lively',
-      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
-    });
-    navigator.mediaSession.playbackState = 'playing';
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentRadioTitle ? `Radio: ${currentRadioTitle}` : 'Lively siempre activo',
+        artist: 'Lively',
+        album: currentUsername ? `@${currentUsername}` : 'Live / Radio / Alertas'
+      });
+      navigator.mediaSession.playbackState = currentRadioTitle && !radioShouldPlay ? 'paused' : 'playing';
+    } catch {}
   }
 
   /* ---------- TTS System ---------- */
@@ -1406,31 +1912,44 @@
 
   function speakViaAudio(url, text) {
     const audio = new Audio(url);
+    const activeToken = ttsPlaybackToken;
     currentAudio = audio;
+    audio.preload = 'auto';
     audio.volume = parseFloat(volumeSlider.value);
     audio.playbackRate = parseFloat(speedSlider.value);
     updateMediaSession(text || 'Reading message…');
 
     /* Timeout protection: skip if audio doesn't finish in 30s */
     const timeout = setTimeout(() => {
+      if (activeToken !== ttsPlaybackToken) return;
       if (currentAudio === audio) {
         audio.pause();
         audio.removeAttribute('src');
         currentAudio = null;
+        currentTtsLabel = null;
         isSpeaking = false;
         processQueue();
       }
     }, 30000);
 
     const cleanup = () => {
+      if (activeToken !== ttsPlaybackToken || currentAudio !== audio) return;
       clearTimeout(timeout);
-      if (currentAudio === audio) currentAudio = null;
+      currentAudio = null;
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     };
 
     audio.onended = cleanup;
     audio.onerror = cleanup;
+    ['stalled', 'suspend', 'waiting'].forEach((eventName) => {
+      audio.addEventListener(eventName, () => {
+        if (activeToken !== ttsPlaybackToken || currentAudio !== audio) return;
+        startKeepAliveAudio();
+        audio.play().catch(() => {});
+      });
+    });
     audio.play().catch(cleanup);
   }
 
@@ -1485,10 +2004,15 @@
     let label;
     if (eventType === 'gift') {
       label = text;
+    } else if (eventType === 'test') {
+      label = text;
     } else {
       label = readUsernameToggle.checked ? `${user} says: ${text}` : text;
     }
+    if (label === currentTtsLabel || queuedTtsLabels.has(label)) return;
+
     ttsQueue.push(label);
+    queuedTtsLabels.add(label);
     renderQueue();
     processQueue();
   }
@@ -1502,6 +2026,9 @@
     isSpeaking = true;
 
     const next = ttsQueue.shift();
+    queuedTtsLabels.delete(next);
+    currentTtsLabel = next;
+    const activeToken = ++ttsPlaybackToken;
     renderQueue();
 
     const provider = ttsProvider.value;
@@ -1534,13 +2061,27 @@
 
     /* Timeout protection for browser TTS (30s max) */
     const timeout = setTimeout(() => {
+      if (activeToken !== ttsPlaybackToken) return;
       speechSynthesis.cancel();
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     }, 30000);
 
-    utter.onend = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
-    utter.onerror = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
+    utter.onend = () => {
+      if (activeToken !== ttsPlaybackToken) return;
+      clearTimeout(timeout);
+      currentTtsLabel = null;
+      isSpeaking = false;
+      processQueue();
+    };
+    utter.onerror = () => {
+      if (activeToken !== ttsPlaybackToken) return;
+      clearTimeout(timeout);
+      currentTtsLabel = null;
+      isSpeaking = false;
+      processQueue();
+    };
 
     speechSynthesis.speak(utter);
   }
@@ -1558,49 +2099,7 @@
   /* ---------- Test TTS ---------- */
   testTtsBtn.addEventListener('click', () => {
     const testText = 'Hello! This is a TTS test. Hola, esta es una prueba de voz.';
-    const provider = ttsProvider.value;
-    if (provider === 'streamelements') {
-      const voice = seVoiceSelect.value;
-      const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'google') {
-      const lang = gttsLangSelect.value;
-      const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'tiktok') {
-      const voice = tiktokVoiceSelect.value;
-      const url = `/api/tiktok-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'edge') {
-      const voice = edgeVoiceSelect.value;
-      const url = `/api/edge-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else {
-      const utter = new SpeechSynthesisUtterance(testText);
-      utter.volume = parseFloat(volumeSlider.value);
-      utter.rate   = parseFloat(speedSlider.value);
-      const voices = speechSynthesis.getVoices();
-      const idx = parseInt(voiceSelect.value, 10);
-      if (voices[idx]) utter.voice = voices[idx];
-      updateMediaSession(testText);
-      speechSynthesis.speak(utter);
-    }
+    enqueueTTS('', testText, 'test');
   });
 
   /* ---------- Controls ---------- */
@@ -1649,8 +2148,10 @@
     stuckCount++;
     if (stuckCount >= 2) {
       console.warn('TTS watchdog: forcing recovery from stuck state');
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentTtsLabel = null;
       isSpeaking = false;
       stuckCount = 0;
       processQueue();
@@ -1664,11 +2165,32 @@
     }
   }, 20000);
 
+  /* Keep Media Session/audio pipeline warm even after background throttling */
+  setInterval(() => {
+    if (!ttsEnabled && !currentRadioStreamUrl && !currentUsername) return;
+    requestWakeLock();
+    startKeepAliveAudio();
+    resumeActivePlayback();
+  }, 15000);
+
   /* Resume AudioContext if suspended (e.g. iOS/Android background) */
   document.addEventListener('visibilitychange', () => {
     if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume();
+      audioCtx.resume().catch(() => {});
     }
+    recoverConnectionIfNeeded();
+    resumeActivePlayback();
+  });
+
+  window.addEventListener('focus', recoverConnectionIfNeeded);
+  window.addEventListener('online', recoverConnectionIfNeeded);
+  window.addEventListener('pageshow', () => {
+    recoverConnectionIfNeeded();
+    resumeActivePlayback();
+  });
+  document.addEventListener('resume', () => {
+    recoverConnectionIfNeeded();
+    resumeActivePlayback();
   });
 
   /* Request wake lock on load if TTS is enabled */

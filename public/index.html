@@ -46,6 +46,7 @@
     <button class="tab-btn active" data-tab="mainTab">💬 Chat</button>
     <button class="tab-btn" data-tab="ttsTab">⚙️ Settings</button>
     <button class="tab-btn" data-tab="giftGalleryTab">🎁 Gifts</button>
+    <button class="tab-btn" data-tab="radioTab">📻 Radio</button>
     <button class="tab-btn" data-tab="liveTab">🎮 LIVE</button>
   </nav>
 
@@ -406,6 +407,80 @@
       <div class="control-group sound-library">
         <h3>🔊 Sounds</h3>
         <div id="soundLibrary" class="sound-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Radio Tab ========== -->
+  <section id="radioTab" class="tab-content">
+    <div class="tts-scroll">
+      <div class="radio-header">
+        <h2>📻 Radio</h2>
+        <p class="radio-desc">Reproduce música de fondo mientras administras tu LIVE.</p>
+      </div>
+
+      <div class="radio-player-card">
+        <div class="radio-now-playing">
+          <span class="radio-status-dot" aria-hidden="true"></span>
+          <div>
+            <span class="radio-label">Ahora sonando</span>
+            <strong id="radioNowPlaying">Selecciona una estación</strong>
+          </div>
+        </div>
+        <audio id="radioPlayer" preload="none" playsinline></audio>
+        <div class="radio-controls" aria-label="Controles de radio">
+          <button id="radioPrevBtn" class="radio-control-btn" type="button" aria-label="Estación anterior">⏮</button>
+          <button id="radioPlayPauseBtn" class="radio-control-btn radio-control-main" type="button" aria-label="Reproducir radio">▶</button>
+          <button id="radioNextBtn" class="radio-control-btn" type="button" aria-label="Siguiente estación">⏭</button>
+        </div>
+        <div class="radio-actions">
+          <button id="radioStopBtn" class="radio-secondary-btn" type="button">⏹ Detener</button>
+          <label class="radio-volume">
+            Volumen
+            <input id="radioVolumeSlider" type="range" min="0" max="1" step="0.05" value="0.7" aria-label="Volumen de radio" />
+          </label>
+        </div>
+      </div>
+
+      <div class="radio-grid" aria-label="Estaciones de radio">
+        <button class="radio-station" type="button" data-title="FIP Radio" data-stream="https://icecast.radiofrance.fr/fip-midfi.mp3">
+          <span class="radio-station-icon">🎶</span>
+          <span>
+            <strong>FIP Radio</strong>
+            <small>Eclectic / Chill</small>
+          </span>
+        </button>
+        <button class="radio-station" type="button" data-title="Radio Paradise" data-stream="https://stream.radioparadise.com/mp3-128">
+          <span class="radio-station-icon">🌴</span>
+          <span>
+            <strong>Radio Paradise</strong>
+            <small>Rock / Mix</small>
+          </span>
+        </button>
+        <button class="radio-station" type="button" data-title="SomaFM Groove Salad" data-stream="https://ice2.somafm.com/groovesalad-128-mp3">
+          <span class="radio-station-icon">🥗</span>
+          <span>
+            <strong>Groove Salad</strong>
+            <small>Ambient Beats</small>
+          </span>
+        </button>
+        <button class="radio-station" type="button" data-title="BBC World Service" data-stream="https://stream.live.vc.bbcmedia.co.uk/bbc_world_service">
+          <span class="radio-station-icon">🌍</span>
+          <span>
+            <strong>BBC World Service</strong>
+            <small>Noticias</small>
+          </span>
+        </button>
+      </div>
+
+      <div class="control-group radio-custom">
+        <h3>Agregar stream personalizado</h3>
+        <p class="radio-desc">Pega una URL directa de audio en vivo para escuchar tu propia radio.</p>
+        <div class="radio-custom-row">
+          <input id="radioCustomUrl" type="url" placeholder="https://example.com/radio.mp3" autocomplete="off" />
+          <button id="radioLoadBtn" type="button">Cargar</button>
+        </div>
+        <p id="radioMessage" class="radio-message" role="status"></p>
       </div>
     </div>
   </section>

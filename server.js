@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const { Readable } = require('stream');
 const { WebSocketServer, WebSocket } = require('ws');
 const sharp = require('sharp');
 const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
@@ -12,6 +13,51 @@ app.use(express.static('public'));
 app.use(express.json());
 
 app.get('/healthz', (_req, res) => res.status(200).type('text/plain').send('ok'));
+
+const RADIO_STREAM_ALLOWLIST = new Set([
+  'https://icecast.radiofrance.fr/fip-midfi.mp3',
+  'https://stream.radioparadise.com/mp3-128',
+  'https://ice2.somafm.com/groovesalad-128-mp3',
+  'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service'
+]);
+
+app.get('/api/radio-proxy', async (req, res) => {
+  try {
+    const safeUrl = String(req.query.url || '');
+    if (!RADIO_STREAM_ALLOWLIST.has(safeUrl)) {
+      return res.status(400).json({ error: 'Radio stream is not allowed' });
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const upstream = await fetch(safeUrl, {
+      redirect: 'manual',
+      headers: {
+        'User-Agent': 'Lively Radio Player/1.0',
+        'Accept': 'audio/*,*/*;q=0.8',
+        'Icy-MetaData': '1'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!upstream.ok || !upstream.body) {
+      throw new Error(`Radio stream ${upstream.status}`);
+    }
+    const contentType = upstream.headers.get('content-type') || 'audio/mpeg';
+    res.status(200);
+    res.set('Content-Type', contentType);
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Accel-Buffering', 'no');
+    const stream = Readable.fromWeb(upstream.body);
+    req.on('close', () => stream.destroy());
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    });
+    stream.pipe(res);
+  } catch (err) {
+    res.status(400).json({ error: 'Radio proxy error: ' + err.message });
+  }
+});
 
 /* Logo with transparent background (cached in memory) */
 const LOGO_URL = 'https://i.imgur.com/MMF1AZ6.jpeg';
@@ -792,6 +838,10 @@ wss.on('connection', (ws) => {
       }).catch((err) => {
         broadcast(ws, 'error', { message: 'Failed to load TikTok connector: ' + err.message });
       });
+    }
+
+    if (msg.type === 'keepalive') {
+      broadcast(ws, 'pong', { timestamp: Date.now() });
     }
 
     if (msg.type === 'disconnect') {
