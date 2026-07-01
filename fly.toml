@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for live777 on 2026-06-19T04:59:27Z
+# fly.toml app configuration file generated for adventure-q-su on 2026-07-01T01:19:46Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'live777'
+app = 'adventure-q-su'
 primary_region = 'ams'
 
 [build]
