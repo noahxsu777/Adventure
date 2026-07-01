@@ -96,6 +96,9 @@
   /* ---------- State ---------- */
   let ws = null;
   let ttsQueue = [];
+  const queuedTtsLabels = new Set();
+  let currentTtsLabel = null;
+  let ttsPlaybackToken = 0;
   let isSpeaking = false;
   let ttsEnabled = true;
   let userDisconnected = false;
@@ -905,9 +908,12 @@
       startKeepAliveAudio();
       mediaSessionIdle();
     } else {
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
+      queuedTtsLabels.clear();
+      currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
       mediaSessionIdle();
@@ -966,9 +972,12 @@
     currentUsername = '';
     reconnectAttempts = 0;
     /* Stop all TTS on disconnect */
+    ttsPlaybackToken++;
     speechSynthesis.cancel();
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     ttsQueue.length = 0;
+    queuedTtsLabels.clear();
+    currentTtsLabel = null;
     isSpeaking = false;
     renderQueue();
     stopConnectionKeepAlive();
@@ -1597,16 +1606,21 @@
       mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('stop', () => {
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       ttsQueue.length = 0;
+      queuedTtsLabels.clear();
+      currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
       mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     });
@@ -1653,6 +1667,7 @@
   populateVoices();
 
   function speakViaAudio(url, text) {
+  function speakViaAudio(url, text) {
     const audio = new Audio(url);
     currentAudio = audio;
     audio.volume = parseFloat(volumeSlider.value);
@@ -1661,18 +1676,22 @@
 
     /* Timeout protection: skip if audio doesn't finish in 30s */
     const timeout = setTimeout(() => {
+      if (activeToken !== ttsPlaybackToken) return;
       if (currentAudio === audio) {
         audio.pause();
         audio.removeAttribute('src');
         currentAudio = null;
+        currentTtsLabel = null;
         isSpeaking = false;
         processQueue();
       }
     }, 30000);
 
     const cleanup = () => {
+      if (activeToken !== ttsPlaybackToken || currentAudio !== audio) return;
       clearTimeout(timeout);
-      if (currentAudio === audio) currentAudio = null;
+      currentAudio = null;
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     };
@@ -1733,10 +1752,15 @@
     let label;
     if (eventType === 'gift') {
       label = text;
+    } else if (eventType === 'test') {
+      label = text;
     } else {
       label = readUsernameToggle.checked ? `${user} says: ${text}` : text;
     }
+    if (label === currentTtsLabel || queuedTtsLabels.has(label)) return;
+
     ttsQueue.push(label);
+    queuedTtsLabels.add(label);
     renderQueue();
     processQueue();
   }
@@ -1750,6 +1774,9 @@
     isSpeaking = true;
 
     const next = ttsQueue.shift();
+    queuedTtsLabels.delete(next);
+    currentTtsLabel = next;
+    const activeToken = ++ttsPlaybackToken;
     renderQueue();
 
     const provider = ttsProvider.value;
@@ -1782,13 +1809,27 @@
 
     /* Timeout protection for browser TTS (30s max) */
     const timeout = setTimeout(() => {
+      if (activeToken !== ttsPlaybackToken) return;
       speechSynthesis.cancel();
+      currentTtsLabel = null;
       isSpeaking = false;
       processQueue();
     }, 30000);
 
-    utter.onend = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
-    utter.onerror = () => { clearTimeout(timeout); isSpeaking = false; processQueue(); };
+    utter.onend = () => {
+      if (activeToken !== ttsPlaybackToken) return;
+      clearTimeout(timeout);
+      currentTtsLabel = null;
+      isSpeaking = false;
+      processQueue();
+    };
+    utter.onerror = () => {
+      if (activeToken !== ttsPlaybackToken) return;
+      clearTimeout(timeout);
+      currentTtsLabel = null;
+      isSpeaking = false;
+      processQueue();
+    };
 
     speechSynthesis.speak(utter);
   }
@@ -1806,49 +1847,7 @@
   /* ---------- Test TTS ---------- */
   testTtsBtn.addEventListener('click', () => {
     const testText = 'Hello! This is a TTS test. Hola, esta es una prueba de voz.';
-    const provider = ttsProvider.value;
-    if (provider === 'streamelements') {
-      const voice = seVoiceSelect.value;
-      const url = `/api/tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'google') {
-      const lang = gttsLangSelect.value;
-      const url = `/api/gtts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'tiktok') {
-      const voice = tiktokVoiceSelect.value;
-      const url = `/api/tiktok-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else if (provider === 'edge') {
-      const voice = edgeVoiceSelect.value;
-      const url = `/api/edge-tts?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(testText)}`;
-      const audio = new Audio(url);
-      audio.volume = parseFloat(volumeSlider.value);
-      audio.playbackRate = parseFloat(speedSlider.value);
-      updateMediaSession(testText);
-      audio.play().catch(() => {});
-    } else {
-      const utter = new SpeechSynthesisUtterance(testText);
-      utter.volume = parseFloat(volumeSlider.value);
-      utter.rate   = parseFloat(speedSlider.value);
-      const voices = speechSynthesis.getVoices();
-      const idx = parseInt(voiceSelect.value, 10);
-      if (voices[idx]) utter.voice = voices[idx];
-      updateMediaSession(testText);
-      speechSynthesis.speak(utter);
-    }
+    enqueueTTS('', testText, 'test');
   });
 
   /* ---------- Controls ---------- */
@@ -1897,8 +1896,10 @@
     stuckCount++;
     if (stuckCount >= 2) {
       console.warn('TTS watchdog: forcing recovery from stuck state');
+      ttsPlaybackToken++;
       speechSynthesis.cancel();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentTtsLabel = null;
       isSpeaking = false;
       stuckCount = 0;
       processQueue();
