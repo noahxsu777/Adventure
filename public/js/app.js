@@ -119,6 +119,11 @@
   let keepAliveGain = null;
   let keepAliveAudio = null;
   let keepAliveDestination = null;
+  let wsReconnectTimer = null;
+  let currentRadioStreamUrl = '';
+  let currentRadioTitle = '';
+  let radioReconnectTimer = null;
+  let radioReconnectAttempts = 0;
 
   /* ---------- Service Worker Registration ---------- */
   if ('serviceWorker' in navigator) {
@@ -200,6 +205,7 @@
   function primeAlwaysPlayingState() {
     startKeepAliveAudio();
     requestWakeLock();
+    resumeActivePlayback();
   }
 
   ['click', 'touchstart', 'pointerdown', 'keydown'].forEach((eventName) => {
@@ -240,13 +246,38 @@
     }
   }
 
+  function resumeActivePlayback() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    if (keepAliveAudio && keepAliveAudio.paused) {
+      keepAliveAudio.play().catch(() => {});
+    }
+    if (currentAudio && currentAudio.paused && !currentAudio.ended) {
+      currentAudio.play().catch(() => {});
+    }
+    if (radioPlayer && currentRadioStreamUrl && radioPlayer.paused && !radioPlayer.ended) {
+      radioPlayer.play().catch(() => {});
+    }
+    if (ttsProvider.value === 'browser' && isSpeaking && speechSynthesis.paused) {
+      speechSynthesis.resume();
+    }
+    if (currentTtsLabel) {
+      updateMediaSession(currentTtsLabel);
+    } else {
+      mediaSessionIdle();
+    }
+  }
+
   /* Re-acquire wake lock on visibility change */
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       recoverConnectionIfNeeded();
       startKeepAliveAudio();
+      resumeActivePlayback();
     } else {
       startKeepAliveAudio();
+      mediaSessionIdle();
     }
   });
 
@@ -487,6 +518,28 @@
     if (radioMessage) radioMessage.textContent = message || '';
   }
 
+  function clearRadioReconnect() {
+    if (radioReconnectTimer) clearTimeout(radioReconnectTimer);
+    radioReconnectTimer = null;
+  }
+
+  function scheduleRadioReconnect() {
+    if (!radioPlayer || !currentRadioStreamUrl || radioReconnectTimer) return;
+    radioReconnectAttempts++;
+    const delay = Math.min(2000 * Math.pow(1.5, radioReconnectAttempts - 1), 30000);
+    setRadioMessage(`Reconectando radio en ${Math.ceil(delay / 1000)}s…`);
+    radioReconnectTimer = setTimeout(() => {
+      radioReconnectTimer = null;
+      if (!currentRadioStreamUrl) return;
+      radioPlayer.src = currentRadioStreamUrl;
+      radioPlayer.load();
+      primeAlwaysPlayingState();
+      radioPlayer.play().catch(() => {
+        scheduleRadioReconnect();
+      });
+    }, delay);
+  }
+
   function setRadioStation(title, streamUrl, stationButton) {
     if (!radioPlayer || !radioNowPlaying) return;
     const safeStreamUrl = getSafeAudioUrl(streamUrl);
@@ -495,6 +548,10 @@
       return;
     }
 
+    clearRadioReconnect();
+    currentRadioStreamUrl = safeStreamUrl;
+    currentRadioTitle = title;
+    radioReconnectAttempts = 0;
     radioPlayer.src = safeStreamUrl;
     radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
     radioNowPlaying.textContent = title;
@@ -527,8 +584,10 @@
     });
 
     radioPlayer.addEventListener('play', () => {
+      clearRadioReconnect();
+      radioReconnectAttempts = 0;
       if (radioPlayerCard) radioPlayerCard.classList.add('playing');
-      updateMediaSession(`Radio: ${radioNowPlaying.textContent || 'En vivo'}`);
+      updateMediaSession(`Radio: ${currentRadioTitle || radioNowPlaying.textContent || 'En vivo'}`);
     });
 
     radioPlayer.addEventListener('pause', () => {
@@ -537,11 +596,25 @@
 
     radioPlayer.addEventListener('error', () => {
       if (radioPlayerCard) radioPlayerCard.classList.remove('playing');
-      setRadioMessage('No se pudo cargar esta estación. Prueba otra URL.');
+      if (currentRadioStreamUrl) {
+        scheduleRadioReconnect();
+      } else {
+        setRadioMessage('No se pudo cargar esta estación. Prueba otra URL.');
+      }
+    });
+
+    ['stalled', 'suspend', 'waiting'].forEach((eventName) => {
+      radioPlayer.addEventListener(eventName, () => {
+        if (currentRadioStreamUrl && !radioPlayer.paused) scheduleRadioReconnect();
+      });
     });
 
     if (radioStopBtn) {
       radioStopBtn.addEventListener('click', () => {
+        clearRadioReconnect();
+        currentRadioStreamUrl = '';
+        currentRadioTitle = '';
+        radioReconnectAttempts = 0;
         radioPlayer.pause();
         radioPlayer.removeAttribute('src');
         radioPlayer.load();
@@ -932,6 +1005,8 @@
 
     ws.addEventListener('open', () => {
       reconnectAttempts = 0;
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
       startConnectionKeepAlive();
       ws.send(JSON.stringify({ type: 'connect', username, mode: mode || connectionMode }));
     });
@@ -952,7 +1027,9 @@
         setStatus('reconnecting');
         reconnectAttempts++;
         const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
-        setTimeout(() => {
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = setTimeout(() => {
+          wsReconnectTimer = null;
           if (!userDisconnected && currentUsername) {
             connectWs(currentUsername, currentSessionMode);
           }
@@ -971,6 +1048,8 @@
     userDisconnected = true;
     currentUsername = '';
     reconnectAttempts = 0;
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
     /* Stop all TTS on disconnect */
     ttsPlaybackToken++;
     speechSynthesis.cancel();
@@ -1597,12 +1676,20 @@
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => {
       if (currentAudio) currentAudio.pause();
-      mediaSessionIdle();
+      if (radioPlayer && !radioPlayer.paused) radioPlayer.pause();
       startKeepAliveAudio();
+      mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('play', () => {
-      if (currentAudio) currentAudio.play();
       startKeepAliveAudio();
+      requestWakeLock();
+      if (currentAudio) currentAudio.play().catch(() => {});
+      if (radioPlayer && currentRadioStreamUrl && radioPlayer.paused) {
+        radioPlayer.play().catch(scheduleRadioReconnect);
+      }
+      if (!isSpeaking && ttsQueue.length > 0) processQueue();
+      if (ttsProvider.value === 'browser' && speechSynthesis.paused) speechSynthesis.resume();
+      recoverConnectionIfNeeded();
       mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('stop', () => {
@@ -1614,6 +1701,11 @@
       currentTtsLabel = null;
       isSpeaking = false;
       renderQueue();
+      clearRadioReconnect();
+      currentRadioStreamUrl = '';
+      currentRadioTitle = '';
+      radioReconnectAttempts = 0;
+      if (radioPlayer) radioPlayer.pause();
       mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
@@ -1632,23 +1724,27 @@
       mediaSessionIdle();
       return;
     }
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: text.length > 60 ? text.slice(0, 57) + '…' : text,
-      artist: 'Lively',
-      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
-    });
-    navigator.mediaSession.playbackState = 'playing';
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: text.length > 60 ? text.slice(0, 57) + '…' : text,
+        artist: 'Lively',
+        album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+      });
+      navigator.mediaSession.playbackState = 'playing';
+    } catch {}
   }
 
   /* Show idle state in media session when queue drains */
   function mediaSessionIdle() {
     if (!('mediaSession' in navigator)) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: 'Lively siempre activo',
-      artist: 'Lively',
-      album: currentUsername ? `@${currentUsername}` : 'Live / Radio / Alertas'
-    });
-    navigator.mediaSession.playbackState = 'playing';
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentRadioTitle ? `Radio: ${currentRadioTitle}` : 'Lively siempre activo',
+        artist: 'Lively',
+        album: currentUsername ? `@${currentUsername}` : 'Live / Radio / Alertas'
+      });
+      navigator.mediaSession.playbackState = 'playing';
+    } catch {}
   }
 
   /* ---------- TTS System ---------- */
@@ -1670,6 +1766,7 @@
     const audio = new Audio(url);
     const activeToken = ttsPlaybackToken;
     currentAudio = audio;
+    audio.preload = 'auto';
     audio.volume = parseFloat(volumeSlider.value);
     audio.playbackRate = parseFloat(speedSlider.value);
     updateMediaSession(text || 'Reading message…');
@@ -1698,6 +1795,13 @@
 
     audio.onended = cleanup;
     audio.onerror = cleanup;
+    ['stalled', 'suspend', 'waiting'].forEach((eventName) => {
+      audio.addEventListener(eventName, () => {
+        if (activeToken !== ttsPlaybackToken || currentAudio !== audio) return;
+        startKeepAliveAudio();
+        audio.play().catch(() => {});
+      });
+    });
     audio.play().catch(cleanup);
   }
 
@@ -1913,16 +2017,33 @@
     }
   }, 20000);
 
+  /* Keep Media Session/audio pipeline warm even after background throttling */
+  setInterval(() => {
+    if (!ttsEnabled && !currentRadioStreamUrl && !currentUsername) return;
+    requestWakeLock();
+    startKeepAliveAudio();
+    resumeActivePlayback();
+  }, 15000);
+
   /* Resume AudioContext if suspended (e.g. iOS/Android background) */
   document.addEventListener('visibilitychange', () => {
     if (audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume().catch(() => {});
     }
     recoverConnectionIfNeeded();
+    resumeActivePlayback();
   });
 
   window.addEventListener('focus', recoverConnectionIfNeeded);
   window.addEventListener('online', recoverConnectionIfNeeded);
+  window.addEventListener('pageshow', () => {
+    recoverConnectionIfNeeded();
+    resumeActivePlayback();
+  });
+  document.addEventListener('resume', () => {
+    recoverConnectionIfNeeded();
+    resumeActivePlayback();
+  });
 
   /* Request wake lock on load if TTS is enabled */
   if (ttsEnabled) {
