@@ -114,6 +114,8 @@
   let lastPongAt = Date.now();
   let keepAliveOscillator = null;
   let keepAliveGain = null;
+  let keepAliveAudio = null;
+  let keepAliveDestination = null;
 
   /* ---------- Service Worker Registration ---------- */
   if ('serviceWorker' in navigator) {
@@ -141,24 +143,44 @@
   }
 
   function startKeepAliveAudio() {
-    if (keepAliveOscillator || !ttsEnabled) return;
+    if (keepAliveOscillator && keepAliveAudio && !keepAliveAudio.paused) return;
     try {
       const ctx = getAudioCtx();
-      keepAliveGain = ctx.createGain();
-      keepAliveGain.gain.value = 0.00001;
-      keepAliveOscillator = ctx.createOscillator();
-      keepAliveOscillator.frequency.value = 18;
-      keepAliveOscillator.connect(keepAliveGain);
-      keepAliveGain.connect(ctx.destination);
-      keepAliveOscillator.start();
-      ctx.resume().catch(() => {});
+      if (!keepAliveOscillator) {
+        keepAliveGain = ctx.createGain();
+        keepAliveGain.gain.value = 0.00001;
+        keepAliveDestination = ctx.createMediaStreamDestination();
+        keepAliveOscillator = ctx.createOscillator();
+        keepAliveOscillator.frequency.value = 18;
+        keepAliveOscillator.connect(keepAliveGain);
+        keepAliveGain.connect(ctx.destination);
+        keepAliveGain.connect(keepAliveDestination);
+        keepAliveOscillator.start();
+      }
+      if (!keepAliveAudio && keepAliveDestination) {
+        keepAliveAudio = new Audio();
+        keepAliveAudio.srcObject = keepAliveDestination.stream;
+        keepAliveAudio.loop = true;
+        keepAliveAudio.volume = 0.01;
+        keepAliveAudio.setAttribute('playsinline', '');
+      }
+      ctx.resume().then(() => {
+        if (keepAliveAudio) keepAliveAudio.play().catch(() => {});
+      }).catch(() => {});
+      mediaSessionIdle();
     } catch {
       keepAliveOscillator = null;
       keepAliveGain = null;
+      keepAliveAudio = null;
+      keepAliveDestination = null;
     }
   }
 
   function stopKeepAliveAudio() {
+    if (keepAliveAudio) {
+      try { keepAliveAudio.pause(); } catch {}
+      keepAliveAudio.srcObject = null;
+    }
     if (keepAliveOscillator) {
       try { keepAliveOscillator.stop(); } catch {}
       try { keepAliveOscillator.disconnect(); } catch {}
@@ -168,7 +190,18 @@
     }
     keepAliveOscillator = null;
     keepAliveGain = null;
+    keepAliveAudio = null;
+    keepAliveDestination = null;
   }
+
+  function primeAlwaysPlayingState() {
+    startKeepAliveAudio();
+    requestWakeLock();
+  }
+
+  ['click', 'touchstart', 'pointerdown', 'keydown'].forEach((eventName) => {
+    document.addEventListener(eventName, primeAlwaysPlayingState, { once: true, passive: true });
+  });
 
   function startConnectionKeepAlive() {
     stopConnectionKeepAlive();
@@ -206,12 +239,11 @@
 
   /* Re-acquire wake lock on visibility change */
   document.addEventListener('visibilitychange', () => {
-    if (ttsEnabled) {
-      if (document.visibilityState === 'visible') {
-        recoverConnectionIfNeeded();
-      } else if (currentUsername && !userDisconnected) {
-        startKeepAliveAudio();
-      }
+    if (document.visibilityState === 'visible') {
+      recoverConnectionIfNeeded();
+      startKeepAliveAudio();
+    } else {
+      startKeepAliveAudio();
     }
   });
 
@@ -464,6 +496,7 @@
     radioPlayer.volume = radioVolumeSlider ? parseFloat(radioVolumeSlider.value) : 0.7;
     radioNowPlaying.textContent = title;
     setRadioMessage('');
+    primeAlwaysPlayingState();
 
     document.querySelectorAll('.radio-station').forEach(btn => btn.classList.remove('active'));
     if (stationButton) stationButton.classList.add('active');
@@ -492,6 +525,7 @@
 
     radioPlayer.addEventListener('play', () => {
       if (radioPlayerCard) radioPlayerCard.classList.add('playing');
+      updateMediaSession(`Radio: ${radioNowPlaying.textContent || 'En vivo'}`);
     });
 
     radioPlayer.addEventListener('pause', () => {
@@ -523,6 +557,11 @@
     if (radioLoadBtn && radioCustomUrl) {
       radioLoadBtn.addEventListener('click', () => {
         const streamUrl = radioCustomUrl.value.trim();
+        if (getYouTubeVideoId(streamUrl)) {
+          playYouTubeSearch(streamUrl, '');
+          setRadioMessage('YouTube se abrió en el reproductor superior.');
+          return;
+        }
         if (!getSafeAudioUrl(streamUrl)) {
           setRadioMessage('Ingresa una URL válida que empiece con http:// o https://.');
           return;
@@ -871,9 +910,7 @@
       ttsQueue.length = 0;
       isSpeaking = false;
       renderQueue();
-      releaseWakeLock();
-      stopKeepAliveAudio();
-      updateMediaSession(null);
+      mediaSessionIdle();
     }
   });
 
@@ -934,9 +971,9 @@
     ttsQueue.length = 0;
     isSpeaking = false;
     renderQueue();
-    stopMusicPlayer();
     stopConnectionKeepAlive();
-    stopKeepAliveAudio();
+    stopMusicPlayer();
+    mediaSessionIdle();
     if (ws) {
       try { ws.send(JSON.stringify({ type: 'disconnect' })); } catch {}
       ws.close();
@@ -970,16 +1007,45 @@
     return (m[1] || '').trim();
   }
 
+  function getYouTubeVideoId(value) {
+    const text = String(value || '').trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+    try {
+      const url = new URL(text);
+      if (url.hostname.includes('youtu.be')) return url.pathname.slice(1).split('/')[0] || '';
+      if (url.hostname.includes('youtube.com')) {
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2] || '';
+        if (url.pathname.startsWith('/embed/')) return url.pathname.split('/')[2] || '';
+        return url.searchParams.get('v') || '';
+      }
+    } catch {
+      return '';
+    }
+    return '';
+  }
+
+  function getYouTubeEmbedSrc(query) {
+    const origin = encodeURIComponent(window.location.origin);
+    const videoId = getYouTubeVideoId(query);
+    if (videoId) {
+      return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}`;
+    }
+    return `https://www.youtube.com/embed?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}&listType=search&list=${encodeURIComponent(query)}`;
+  }
+
   function playYouTubeSearch(query, user) {
     if (!query) {
       appendSystem('Uso: !play <nombre de la canción>');
       return;
     }
-    const src = `https://www.youtube.com/embed?autoplay=1&playsinline=1&listType=search&list=${encodeURIComponent(query)}`;
-    musicPlayerFrame.src = src;
+    primeAlwaysPlayingState();
+    musicPlayerFrame.src = getYouTubeEmbedSrc(query);
     musicPlayerTitle.textContent = `🎵 ${query}`;
-    musicPlayerRequester.textContent = user ? `Solicitada por @${user}` : '';
+    musicPlayerRequester.textContent = user
+      ? `Solicitada por @${user} · Si no inicia, toca ▶ en YouTube`
+      : 'Si no inicia, toca ▶ en YouTube';
     musicPlayerCard.classList.remove('hidden');
+    updateMediaSession(`YouTube: ${query}`);
   }
 
   function stopMusicPlayer() {
@@ -988,6 +1054,7 @@
     musicPlayerTitle.textContent = '🎵 Reproductor YouTube';
     musicPlayerRequester.textContent = '';
     musicPlayerCard.classList.add('hidden');
+    mediaSessionIdle();
   }
 
   if (musicPlayerClose) {
@@ -1518,11 +1585,13 @@
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => {
       if (currentAudio) currentAudio.pause();
-      navigator.mediaSession.playbackState = 'paused';
+      mediaSessionIdle();
+      startKeepAliveAudio();
     });
     navigator.mediaSession.setActionHandler('play', () => {
       if (currentAudio) currentAudio.play();
-      navigator.mediaSession.playbackState = 'playing';
+      startKeepAliveAudio();
+      mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('stop', () => {
       speechSynthesis.cancel();
@@ -1530,7 +1599,7 @@
       ttsQueue.length = 0;
       isSpeaking = false;
       renderQueue();
-      updateMediaSession(null);
+      mediaSessionIdle();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
       speechSynthesis.cancel();
@@ -1543,9 +1612,7 @@
   function updateMediaSession(text) {
     if (!('mediaSession' in navigator)) return;
     if (!text) {
-      /* TTS disabled — clear session completely */
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
+      mediaSessionIdle();
       return;
     }
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -1558,11 +1625,11 @@
 
   /* Show idle state in media session when queue drains */
   function mediaSessionIdle() {
-    if (!('mediaSession' in navigator) || !ttsEnabled) return;
+    if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: 'Waiting for messages…',
+      title: 'Lively siempre activo',
       artist: 'Lively',
-      album: currentUsername ? `@${currentUsername}` : 'Live Stream'
+      album: currentUsername ? `@${currentUsername}` : 'Live / Radio / Alertas'
     });
     navigator.mediaSession.playbackState = 'playing';
   }
